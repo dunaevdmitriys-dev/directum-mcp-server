@@ -28,7 +28,12 @@ directum-mcp-server/
 │   │       ├── InspectTool.cs         — inspect: universal metadata reader
 │   │       ├── ValidatePackageTool.cs — check_package: 7 validation checks
 │   │       ├── FixPackageTool.cs      — fix_package: auto-fix package issues
-│   │       └── ValidateResxTool.cs    — check_resx: resx validation
+│   │       ├── ValidateResxTool.cs    — check_resx: resx validation
+│   │       ├── SearchMetadataTool.cs  — search_metadata: full-text MTD search
+│   │       ├── DependencyGraphTool.cs — dependency_graph: module dependency analysis
+│   │       ├── FindDeadResourcesTool.cs — find_dead_resources: orphaned resx keys
+│   │       ├── DiffPackagesTool.cs    — diff_packages: compare two packages
+│   │       └── CheckCodeConsistencyTool.cs — check_code_consistency: MTD↔C# agreement
 │   ├── DirectumMcp.RuntimeTools/  — Runtime MCP server (stdio)
 │   │   └── Tools/
 │   │       ├── SearchDocumentsTool.cs     — find_docs
