@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace DirectumMcp.Core.Helpers;
@@ -36,7 +37,7 @@ public static class ODataHelpers
     {
         if (string.IsNullOrEmpty(isoDate) || isoDate == "-") return "-";
         if (DateTime.TryParse(isoDate, out var dt))
-            return dt.ToString(format);
+            return dt.ToString(format, CultureInfo.InvariantCulture);
         return isoDate;
     }
 

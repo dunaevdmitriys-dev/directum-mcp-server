@@ -25,15 +25,18 @@ directum-mcp-server/
 │   ├── DirectumMcp.Core/          — Shared models, OData client, MTD parser
 │   ├── DirectumMcp.DevTools/      — Development MCP server (stdio)
 │   │   └── Tools/
-│   │       ├── ValidatePackageTool.cs
-│   │       ├── ReadMtdTool.cs
-│   │       └── ValidateResxTool.cs
+│   │       ├── InspectTool.cs         — inspect: universal metadata reader
+│   │       ├── ValidatePackageTool.cs — check_package: 7 validation checks
+│   │       ├── FixPackageTool.cs      — fix_package: auto-fix package issues
+│   │       └── ValidateResxTool.cs    — check_resx: resx validation
 │   ├── DirectumMcp.RuntimeTools/  — Runtime MCP server (stdio)
 │   │   └── Tools/
-│   │       ├── SearchDocumentsTool.cs
-│   │       ├── MyAssignmentsTool.cs
-│   │       ├── CompleteAssignmentTool.cs
-│   │       └── CreateTaskTool.cs
+│   │       ├── SearchDocumentsTool.cs     — find_docs
+│   │       ├── MyAssignmentsTool.cs       — my_tasks
+│   │       ├── CompleteAssignmentTool.cs   — complete
+│   │       ├── CreateTaskTool.cs          — send_task
+│   │       ├── SummarizeTool.cs           — summarize
+│   │       └── BulkCompleteTool.cs        — bulk_complete
 │   └── DirectumMcp.Tests/        — Unit tests
 ├── .mcp.json                      — Claude Code MCP config
 ├── CLAUDE.md                      — This file
@@ -45,6 +48,7 @@ directum-mcp-server/
 - Async/await everywhere
 - Tool classes: `[McpServerToolType]`, methods: `[McpServerTool]`
 - One tool per file
-- Russian descriptions in `[McpServerTool(Description = "...")]` for user-facing text
+- `[McpServerTool(Name = "...")]` + separate `[Description("...")]` (NOT Description inside McpServerTool)
+- Russian descriptions for user-facing text
 - English code, comments only where logic is non-obvious
 - No excessive error handling — fail fast with clear messages
