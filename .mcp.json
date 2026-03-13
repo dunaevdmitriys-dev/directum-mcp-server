@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "directum-dev": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.DevTools"],
+      "env": {
+        "SOLUTION_PATH": "d:\\25.3.20260215.0041\\RXlog\\git_repository"
+      }
+    },
+    "directum-rx": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.RuntimeTools"],
+      "env": {
+        "RX_ODATA_URL": "http://localhost/Integration/odata",
+        "RX_USERNAME": "Service User",
+        "RX_PASSWORD": ""
+      }
+    }
+  }
+}

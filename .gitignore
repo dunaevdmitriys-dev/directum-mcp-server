@@ -1,0 +1,31 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+.vs/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# IDE
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Pipeline artifacts (internal dev docs)
+.pipeline/
