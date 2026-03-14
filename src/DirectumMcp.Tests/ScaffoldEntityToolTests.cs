@@ -228,4 +228,88 @@ public class ScaffoldEntityToolTests : IDisposable
     }
 
     #endregion
+
+    #region Job Mode
+
+    [Fact]
+    public async Task Scaffold_Job_CreatesJobFiles()
+    {
+        var output = GetOutputDir("job_files");
+
+        var result = await _tool.ScaffoldEntity(output, "CleanupJob", "DirRX.Sample",
+            mode: "job");
+
+        Assert.Contains("создано", result, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(Path.Combine(output, "ModuleJobs.cs")));
+        Assert.True(File.Exists(Path.Combine(output, "ModuleSystem.resx")));
+        Assert.True(File.Exists(Path.Combine(output, "ModuleSystem.ru.resx")));
+    }
+
+    [Fact]
+    public async Task Scaffold_Job_MtdContainsJobMetadata()
+    {
+        var output = GetOutputDir("job_mtd");
+
+        await _tool.ScaffoldEntity(output, "SyncJob", "DirRX.Sample",
+            mode: "job");
+
+        var mtd = File.ReadAllText(Path.Combine(output, "Module.mtd"));
+        Assert.Contains("JobMetadata", mtd);
+        Assert.Contains("SyncJob", mtd);
+        Assert.Contains("GenerateHandler", mtd);
+        Assert.Contains("CronSchedule", mtd);
+    }
+
+    [Fact]
+    public async Task Scaffold_Job_ResxContainsJobKeys()
+    {
+        var output = GetOutputDir("job_resx");
+
+        await _tool.ScaffoldEntity(output, "ReportJob", "DirRX.Sample",
+            mode: "job");
+
+        var resx = File.ReadAllText(Path.Combine(output, "ModuleSystem.resx"));
+        Assert.Contains("Job_ReportJob", resx);
+        Assert.Contains("Job_ReportJob_Description", resx);
+    }
+
+    [Fact]
+    public async Task Scaffold_Job_CsHasCorrectNamespace()
+    {
+        var output = GetOutputDir("job_ns");
+
+        await _tool.ScaffoldEntity(output, "NotifyJob", "DirRX.Contracts",
+            mode: "job");
+
+        var cs = File.ReadAllText(Path.Combine(output, "ModuleJobs.cs"));
+        Assert.Contains("namespace DirRX.Contracts.Server", cs);
+        Assert.Contains("partial class ModuleJobs", cs);
+        Assert.Contains("NotifyJob", cs);
+    }
+
+    [Fact]
+    public async Task Scaffold_Job_DefaultCron()
+    {
+        var output = GetOutputDir("job_cron_default");
+
+        await _tool.ScaffoldEntity(output, "DailyJob", "DirRX.Sample",
+            mode: "job", properties: "");
+
+        var mtd = File.ReadAllText(Path.Combine(output, "Module.mtd"));
+        Assert.Contains("0 0 * * *", mtd);
+    }
+
+    [Fact]
+    public async Task Scaffold_Job_CustomCron()
+    {
+        var output = GetOutputDir("job_cron_custom");
+
+        await _tool.ScaffoldEntity(output, "HourlyJob", "DirRX.Sample",
+            mode: "job", properties: "0 * * * *");
+
+        var mtd = File.ReadAllText(Path.Combine(output, "Module.mtd"));
+        Assert.Contains("0 * * * *", mtd);
+    }
+
+    #endregion
 }
