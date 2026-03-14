@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -8,23 +9,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class ScaffoldComponentTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "scaffold_component")]
     [Description("Создание нового Remote Component (стороннего контрола) Directum RX: генерация полной структуры проекта с webpack, manifest, loaders, i18n и заготовками контролов.")]
     public async Task<string> ScaffoldComponent(
@@ -41,8 +25,8 @@ public class ScaffoldComponentTool
         if (string.IsNullOrWhiteSpace(componentName))
             return "**ОШИБКА**: Параметр `componentName` не может быть пустым.";
 
-        if (!IsPathAllowed(outputPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{outputPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(outputPath))
+            return PathGuard.DenyMessage(outputPath);
 
         if (Directory.Exists(outputPath) && Directory.GetFileSystemEntries(outputPath).Length > 0)
             return $"**ОШИБКА**: Директория `{outputPath}` не пуста. Укажите пустую или несуществующую директорию.";

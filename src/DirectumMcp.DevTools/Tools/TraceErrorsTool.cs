@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -17,8 +18,8 @@ public class TraceErrorsTool
         [Description("Дополнительный фильтр по ключевому слову (например, \"NullReference\", \"Missing area\", имя сущности)")] string? keyword = null,
         [Description("Максимальное количество записей для возврата (по умолчанию 30)")] int maxEntries = 30)
     {
-        if (!IsPathAllowed(logsPath))
-            return $"**ОШИБКА**: Доступ к пути `{logsPath}` запрещён. Разрешены только пути в рамках SOLUTION_PATH или временной директории.";
+        if (!PathGuard.IsAllowed(logsPath))
+            return PathGuard.DenyMessage(logsPath);
 
         if (!Directory.Exists(logsPath))
             return $"**ОШИБКА**: Директория `{logsPath}` не существует.";
@@ -74,27 +75,6 @@ public class TraceErrorsTool
             .ToList();
 
         return BuildReport(logsPath, normalizedLevel, lastMinutes, keyword, since, entries, checkedFiles);
-    }
-
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        var tempPath = Path.GetTempPath();
-
-        var normalizedInput = Path.GetFullPath(path);
-
-        if (!string.IsNullOrWhiteSpace(solutionPath))
-        {
-            var normalizedSolution = Path.GetFullPath(solutionPath);
-            if (normalizedInput.StartsWith(normalizedSolution, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        var normalizedTemp = Path.GetFullPath(tempPath);
-        if (normalizedInput.StartsWith(normalizedTemp, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
     }
 
     private static List<string> CollectLogFiles(string logsPath)

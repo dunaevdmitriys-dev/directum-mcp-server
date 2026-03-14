@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -40,25 +41,13 @@ public class ValidateResxTool
         @"^ControlGroup_[0-9a-fA-F]{32}$",
         RegexOptions.Compiled);
 
-    private static bool IsPathAllowed(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Environment.GetEnvironmentVariable("SOLUTION_PATH") ?? "",
-            Path.GetTempPath()
-        };
-        return allowedPaths.Any(bp => !string.IsNullOrEmpty(bp) &&
-            fullPath.StartsWith(Path.GetFullPath(bp), StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "check_resx")]
     [Description("Проверка формата ключей System.resx файлов Directum RX. " +
                  "Обнаруживает ключи Resource_<GUID> (неверный формат) и предлагает правильные имена на основе MTD.")]
     public async Task<string> ValidateResx(string directoryPath)
     {
-        if (!IsPathAllowed(directoryPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{directoryPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(directoryPath))
+            return PathGuard.DenyMessage(directoryPath);
 
         if (!Directory.Exists(directoryPath))
             return $"**ОШИБКА**: Директория не найдена: `{directoryPath}`";

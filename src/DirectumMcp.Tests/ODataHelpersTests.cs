@@ -83,12 +83,10 @@ public class ODataHelpersTests
     }
 
     [Fact]
-    public void GetItems_RootArray_ThrowsInvalidOperation()
+    public void GetItems_RootArray_ReturnsElements()
     {
-        // NOTE: JsonElement.TryGetProperty throws InvalidOperationException when called on
-        // an Array element (not Object). The ODataHelpers.GetItems implementation calls
-        // TryGetProperty("value", ...) unconditionally before checking ValueKind, so passing
-        // a root-level JSON array causes a throw rather than reaching the ValueKind check.
+        // After bug fix: GetItems now checks ValueKind == Array first,
+        // so root-level arrays are handled correctly without throwing.
         using var doc = JsonDocument.Parse("""
             [
               { "Id": 1 },
@@ -97,7 +95,9 @@ public class ODataHelpersTests
             ]
             """);
 
-        Assert.Throws<InvalidOperationException>(() => ODataHelpers.GetItems(doc.RootElement));
+        var items = ODataHelpers.GetItems(doc.RootElement);
+
+        Assert.Equal(3, items.Count);
     }
 
     [Fact]
@@ -126,12 +126,14 @@ public class ODataHelpersTests
     }
 
     [Fact]
-    public void GetItems_EmptyRootArray_ThrowsInvalidOperation()
+    public void GetItems_EmptyRootArray_ReturnsEmpty()
     {
-        // Same as the non-empty root-array case: TryGetProperty throws on Array elements.
+        // After bug fix: empty root array returns empty list instead of throwing.
         using var doc = JsonDocument.Parse("[]");
 
-        Assert.Throws<InvalidOperationException>(() => ODataHelpers.GetItems(doc.RootElement));
+        var items = ODataHelpers.GetItems(doc.RootElement);
+
+        Assert.Empty(items);
     }
 
     [Fact]

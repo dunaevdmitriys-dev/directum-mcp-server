@@ -9,10 +9,10 @@ public static class ODataHelpers
 
     public static List<JsonElement> GetItems(JsonElement root)
     {
-        if (root.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Array)
-            return value.EnumerateArray().ToList();
         if (root.ValueKind == JsonValueKind.Array)
             return root.EnumerateArray().ToList();
+        if (root.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Array)
+            return value.EnumerateArray().ToList();
         return new List<JsonElement>();
     }
 

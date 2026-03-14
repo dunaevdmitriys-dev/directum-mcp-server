@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO.Compression;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -22,8 +23,8 @@ public class BuildDatTool
         packagePath = Path.GetFullPath(packagePath);
 
         // Validate packagePath is allowed
-        if (!IsPathAllowed(packagePath))
-            return $"**ОШИБКА**: Путь `{packagePath}` не разрешён. Разрешены только пути внутри SOLUTION_PATH или временной директории.";
+        if (!PathGuard.IsAllowed(packagePath))
+            return PathGuard.DenyMessage(packagePath);
 
         // Validate packagePath exists
         if (!Directory.Exists(packagePath))
@@ -53,8 +54,8 @@ public class BuildDatTool
         }
 
         // Validate outputPath is allowed
-        if (!IsPathAllowed(outputPath))
-            return $"**ОШИБКА**: Путь для сохранения `{outputPath}` не разрешён. Разрешены только пути внутри SOLUTION_PATH или временной директории.";
+        if (!PathGuard.IsAllowed(outputPath))
+            return PathGuard.DenyMessage(outputPath);
 
         // Resolve version
         string resolvedVersion = version ?? string.Empty;
@@ -164,27 +165,6 @@ public class BuildDatTool
             """;
 
         return report.Trim();
-    }
-
-    private static bool IsPathAllowed(string path)
-    {
-        string solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH") ?? string.Empty;
-        string tempPath = Path.GetTempPath();
-
-        if (!string.IsNullOrWhiteSpace(solutionPath))
-        {
-            string normalizedSolution = Path.GetFullPath(solutionPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            string normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (normalizedPath.StartsWith(normalizedSolution, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        string normalizedTemp = Path.GetFullPath(tempPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        string normalizedTarget = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (normalizedTarget.StartsWith(normalizedTemp, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
     }
 
     private static string? TryReadVersionFromMtd(string packagePath)

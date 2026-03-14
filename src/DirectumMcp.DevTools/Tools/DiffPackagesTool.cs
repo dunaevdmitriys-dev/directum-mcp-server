@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -10,23 +11,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class DiffPackagesTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "diff_packages")]
     [Description("Сравнение двух пакетов Directum RX (директорий или .dat-файлов): различия в метаданных, ресурсах и коде.")]
     public async Task<string> DiffPackages(
@@ -39,10 +23,10 @@ public class DiffPackagesTool
         if (string.IsNullOrWhiteSpace(pathB))
             return "**ОШИБКА**: Параметр `pathB` не может быть пустым.";
 
-        if (!IsPathAllowed(pathA))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{pathA}` находится за пределами разрешённых директорий.";
-        if (!IsPathAllowed(pathB))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{pathB}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(pathA))
+            return PathGuard.DenyMessage(pathA);
+        if (!PathGuard.IsAllowed(pathB))
+            return PathGuard.DenyMessage(pathB);
 
         var normalizedScope = scope.ToLowerInvariant();
         if (normalizedScope is not ("all" or "metadata" or "resources" or "code"))

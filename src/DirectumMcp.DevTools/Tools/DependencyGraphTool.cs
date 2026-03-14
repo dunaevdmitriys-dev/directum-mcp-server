@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -8,23 +9,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class DependencyGraphTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "dependency_graph")]
     [Description("Строит и анализирует граф зависимостей модулей решения Directum RX. Действия: graph — полная карта зависимостей, cycles — поиск циклических зависимостей, impact — анализ влияния модуля на остальные.")]
     public async Task<string> DependencyGraph(
@@ -37,8 +21,8 @@ public class DependencyGraphTool
         if (string.IsNullOrEmpty(resolvedPath))
             return "**ОШИБКА**: Путь к решению не указан и переменная окружения SOLUTION_PATH не задана.";
 
-        if (!IsPathAllowed(resolvedPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{resolvedPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(resolvedPath))
+            return PathGuard.DenyMessage(resolvedPath);
 
         if (!Directory.Exists(resolvedPath))
             return $"**ОШИБКА**: Директория не найдена: `{resolvedPath}`";

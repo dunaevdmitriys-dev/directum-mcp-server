@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DirectumMcp.Core\DirectumMcp.Core.csproj" />
     <ProjectReference Include="..\DirectumMcp.DevTools\DirectumMcp.DevTools.csproj" />
+    <ProjectReference Include="..\DirectumMcp.RuntimeTools\DirectumMcp.RuntimeTools.csproj" />
   </ItemGroup>
 
   <ItemGroup>

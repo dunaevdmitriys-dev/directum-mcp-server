@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -9,23 +10,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class CheckCodeConsistencyTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "check_code_consistency")]
     [Description("Проверка согласованности между MTD-метаданными и C#-кодом в пакете Directum RX: функции, классы, пространства имён, инициализатор модуля.")]
     public async Task<string> CheckCodeConsistency(
@@ -34,8 +18,8 @@ public class CheckCodeConsistencyTool
         if (string.IsNullOrWhiteSpace(packagePath))
             return "**ОШИБКА**: Параметр `packagePath` не может быть пустым.";
 
-        if (!IsPathAllowed(packagePath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{packagePath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(packagePath))
+            return PathGuard.DenyMessage(packagePath);
 
         if (!Directory.Exists(packagePath))
             return $"**ОШИБКА**: Директория не найдена: `{packagePath}`";

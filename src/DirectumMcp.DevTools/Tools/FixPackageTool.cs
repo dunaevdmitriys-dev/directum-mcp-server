@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -35,23 +36,6 @@ public class FixPackageTool
         @"^Resource_[0-9a-fA-F]{8}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
 
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "fix_package")]
     [Description("Автоисправление ошибок .dat пакета Directum RX (resx-ключи, дубли Code, enum, Constraints). dryRun=true по умолчанию.")]
     public async Task<string> Fix(
@@ -64,8 +48,8 @@ public class FixPackageTool
 
         CancellationToken cancellationToken = default)
     {
-        if (!IsPathAllowed(packagePath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{packagePath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(packagePath))
+            return PathGuard.DenyMessage(packagePath);
 
         string workDir;
         bool isTempDir = false;

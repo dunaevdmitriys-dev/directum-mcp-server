@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -35,18 +36,6 @@ public class ValidatePackageTool
         @"^Resource_[0-9a-fA-F]{8}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
 
-    private static bool IsPathAllowed(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Environment.GetEnvironmentVariable("SOLUTION_PATH") ?? "",
-            Path.GetTempPath()
-        };
-        return allowedPaths.Any(bp => !string.IsNullOrEmpty(bp) &&
-            fullPath.StartsWith(Path.GetFullPath(bp), StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "check_package")]
     [Description("Валидация .dat пакета Directum RX перед импортом в DDS. " +
                  "Проверяет 7 типичных проблем: CollectionProperty в DatabookEntry, " +
@@ -54,8 +43,8 @@ public class ValidatePackageTool
                  "согласованность AttachmentGroup, формат ключей System.resx, наличие Analyzers.")]
     public async Task<string> Validate(string packagePath)
     {
-        if (!IsPathAllowed(packagePath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{packagePath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(packagePath))
+            return PathGuard.DenyMessage(packagePath);
 
         string workDir;
         bool isTempDir = false;

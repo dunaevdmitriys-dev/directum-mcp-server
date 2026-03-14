@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -9,23 +10,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class CheckComponentTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static readonly HashSet<string> RequiredDeps = new(StringComparer.OrdinalIgnoreCase)
     {
         "react", "react-dom"
@@ -46,8 +30,8 @@ public class CheckComponentTool
         if (string.IsNullOrWhiteSpace(componentPath))
             return "**ОШИБКА**: Параметр `componentPath` не может быть пустым.";
 
-        if (!IsPathAllowed(componentPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{componentPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(componentPath))
+            return PathGuard.DenyMessage(componentPath);
 
         if (!Directory.Exists(componentPath))
             return $"**ОШИБКА**: Директория не найдена: `{componentPath}`";

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -28,23 +29,6 @@ public class SearchMetadataTool
 
     private const int MaxResults = 50;
 
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "search_metadata")]
     [Description("Поиск по всем MTD-файлам репозитория Directum RX: поиск сущностей по имени, GUID, типу свойства, ссылке EntityGuid и т.д.")]
     public async Task<string> SearchMetadata(
@@ -56,8 +40,8 @@ public class SearchMetadataTool
         if (string.IsNullOrEmpty(solutionPath))
             return "**ОШИБКА**: Переменная среды `SOLUTION_PATH` не задана.";
 
-        if (!IsPathAllowed(solutionPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{solutionPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(solutionPath))
+            return PathGuard.DenyMessage(solutionPath);
 
         if (!Directory.Exists(solutionPath))
             return $"**ОШИБКА**: Директория не найдена: `{solutionPath}`";

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -18,26 +19,14 @@ public class FindDeadResourcesTool
         "Description",
     };
 
-    private static bool IsPathAllowed(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Environment.GetEnvironmentVariable("SOLUTION_PATH") ?? "",
-            Path.GetTempPath()
-        };
-        return allowedPaths.Any(bp => !string.IsNullOrEmpty(bp) &&
-            fullPath.StartsWith(Path.GetFullPath(bp), StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "find_dead_resources")]
     [Description("Поиск «мёртвых» ресурсов в модуле Directum RX: ключи System.resx без соответствующего свойства/действия в MTD, " +
                  "свойства и действия MTD без перевода в System.resx, а также ResourcesKeys в MTD без ключей в Entity.resx.")]
     public async Task<string> FindDeadResources(
         [Description("Путь к директории модуля")] string modulePath)
     {
-        if (!IsPathAllowed(modulePath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{modulePath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(modulePath))
+            return PathGuard.DenyMessage(modulePath);
 
         if (!Directory.Exists(modulePath))
             return $"**ОШИБКА**: Директория не найдена: `{modulePath}`";

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.RegularExpressions;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -8,23 +9,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class ScaffoldEntityTool
 {
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     private static readonly Dictionary<string, string> BaseGuids = new(StringComparer.OrdinalIgnoreCase)
     {
         ["DatabookEntry"] = "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
@@ -63,8 +47,8 @@ public class ScaffoldEntityTool
         if (string.IsNullOrWhiteSpace(moduleName))
             return "**ОШИБКА**: Параметр `moduleName` не может быть пустым.";
 
-        if (!IsPathAllowed(outputPath))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{outputPath}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(outputPath))
+            return PathGuard.DenyMessage(outputPath);
 
         if (!BaseGuids.ContainsKey(baseType))
             return $"**ОШИБКА**: Неизвестный базовый тип `{baseType}`. Допустимые: {string.Join(", ", BaseGuids.Keys)}.";

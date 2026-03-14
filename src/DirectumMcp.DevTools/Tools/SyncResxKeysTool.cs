@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -15,8 +16,8 @@ public class SyncResxKeysTool
         [Description("Путь к директории пакета")] string packagePath,
         [Description("Если true — только показывает, что будет добавлено, без изменения файлов (по умолчанию true)")] bool dryRun = true)
     {
-        if (!IsPathAllowed(packagePath))
-            return $"**ОШИБКА**: Путь `{packagePath}` не разрешён. Разрешены только пути внутри SOLUTION_PATH или временной директории.";
+        if (!PathGuard.IsAllowed(packagePath))
+            return PathGuard.DenyMessage(packagePath);
 
         if (!Directory.Exists(packagePath))
             return $"**ОШИБКА**: Директория не найдена: `{packagePath}`";
@@ -301,24 +302,4 @@ public class SyncResxKeysTool
         xdoc.Save(resxFile);
     }
 
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        var tempPath = Path.GetTempPath();
-
-        var normalizedPath = Path.GetFullPath(path);
-        var normalizedTemp = Path.GetFullPath(tempPath);
-
-        if (!string.IsNullOrWhiteSpace(solutionPath))
-        {
-            var normalizedSolution = Path.GetFullPath(solutionPath);
-            if (normalizedPath.StartsWith(normalizedSolution, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        if (normalizedPath.StartsWith(normalizedTemp, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
-    }
 }

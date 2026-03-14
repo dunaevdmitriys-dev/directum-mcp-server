@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -18,30 +19,13 @@ public class InspectTool
         ["4e09273f-8b3a-489e-814e-a4ebfbba3e6c"] = "Notice (уведомление)",
     };
 
-    private static bool IsPathAllowed(string path)
-    {
-        var solutionPath = Environment.GetEnvironmentVariable("SOLUTION_PATH");
-        if (string.IsNullOrEmpty(solutionPath))
-            return false;
-
-        var fullPath = Path.GetFullPath(path);
-        var allowedPaths = new[]
-        {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
-        };
-        return allowedPaths.Any(bp =>
-            bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
-    }
-
     [McpServerTool(Name = "inspect")]
     [Description("Универсальный инструмент чтения метаданных Directum RX — MTD сущности, MTD модуля, resx, директория модуля")]
     public async Task<string> Inspect(
         [Description("Путь к файлу (.mtd, .resx) или директории модуля")] string path)
     {
-        if (!IsPathAllowed(path))
-            return $"**ОШИБКА**: Доступ запрещён. Путь `{path}` находится за пределами разрешённых директорий.";
+        if (!PathGuard.IsAllowed(path))
+            return PathGuard.DenyMessage(path);
 
         if (File.Exists(path))
         {
