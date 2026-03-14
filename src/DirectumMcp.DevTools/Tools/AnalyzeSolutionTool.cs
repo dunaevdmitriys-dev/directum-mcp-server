@@ -1,0 +1,671 @@
+using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
+using DirectumMcp.Core.Helpers;
+using ModelContextProtocol.Server;
+
+namespace DirectumMcp.DevTools.Tools;
+
+[McpServerToolType]
+public class AnalyzeSolutionTool
+{
+    [McpServerTool(Name = "analyze_solution")]
+    [Description("Кросс-модульный анализ решения Directum RX. Действия: health — общий отчёт, conflicts — конфликты перекрытий, orphans — сироты, duplicates — дубликаты GUID/Code, versions — совместимость версий.")]
+    public async Task<string> AnalyzeSolution(
+        [Description("Путь к корню решения")] string? solutionPath = null,
+        [Description("Действие: health | conflicts | orphans | duplicates | versions")] string action = "health")
+    {
+        var resolvedPath = solutionPath ?? Environment.GetEnvironmentVariable("SOLUTION_PATH");
+
+        if (string.IsNullOrEmpty(resolvedPath))
+            return "**ОШИБКА**: Путь к решению не указан и переменная окружения SOLUTION_PATH не задана.";
+
+        if (!PathGuard.IsAllowed(resolvedPath))
+            return PathGuard.DenyMessage(resolvedPath);
+
+        if (!Directory.Exists(resolvedPath))
+            return $"**ОШИБКА**: Директория не найдена: `{resolvedPath}`";
+
+        var (modules, entities) = await BuildSolutionModel(resolvedPath);
+
+        return action.ToLowerInvariant() switch
+        {
+            "conflicts" => RenderConflicts(modules, entities),
+            "orphans" => RenderOrphans(modules, entities),
+            "duplicates" => RenderDuplicates(modules, entities),
+            "versions" => await RenderVersions(modules, resolvedPath),
+            _ => RenderHealth(resolvedPath, modules, entities)
+        };
+    }
+
+    internal record ModuleInfo(string Name, string Guid, string Path, List<string> DependencyGuids, List<string> EntityGuids, bool IsPlatform);
+    internal record EntityInfo(string Name, string Guid, string BaseGuid, string? AncestorGuid, string ModuleGuid, string FilePath, List<PropertyInfo> Properties);
+    internal record PropertyInfo(string Name, string Code, string Type);
+
+    internal static async Task<(List<ModuleInfo> Modules, List<EntityInfo> Entities)> BuildSolutionModel(string solutionPath)
+    {
+        var modules = new List<ModuleInfo>();
+        var entities = new List<EntityInfo>();
+
+        var basePath = Path.GetFullPath(Path.Combine(solutionPath, "base"));
+        var workPath = Path.GetFullPath(Path.Combine(solutionPath, "work"));
+
+        var moduleMtdFiles = Directory.GetFiles(solutionPath, "Module.mtd", SearchOption.AllDirectories);
+
+        foreach (var moduleMtdFile in moduleMtdFiles)
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(moduleMtdFile);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var metaType = GetString(root, "$type");
+                if (!metaType.Contains("ModuleMetadata"))
+                    continue;
+
+                var moduleName = GetString(root, "Name");
+                var moduleGuid = GetString(root, "NameGuid");
+
+                if (string.IsNullOrEmpty(moduleGuid))
+                    continue;
+
+                var deps = new List<string>();
+                if (root.TryGetProperty("Dependencies", out var depsEl) && depsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var dep in depsEl.EnumerateArray())
+                    {
+                        var id = GetString(dep, "Id");
+                        if (!string.IsNullOrEmpty(id))
+                            deps.Add(id.ToLowerInvariant());
+                    }
+                }
+
+                var entityGuids = new List<string>();
+                if (root.TryGetProperty("Entities", out var entitiesEl) && entitiesEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var ent in entitiesEl.EnumerateArray())
+                    {
+                        var id = GetString(ent, "Id");
+                        if (!string.IsNullOrEmpty(id))
+                            entityGuids.Add(id.ToLowerInvariant());
+                    }
+                }
+
+                var fullModulePath = Path.GetFullPath(moduleMtdFile);
+                var moduleDir = Path.GetDirectoryName(fullModulePath)!;
+                var isPlatform = fullModulePath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase) ||
+                                 !fullModulePath.StartsWith(workPath, StringComparison.OrdinalIgnoreCase);
+
+                var moduleInfo = new ModuleInfo(moduleName, moduleGuid.ToLowerInvariant(), moduleDir, deps, entityGuids, isPlatform);
+                modules.Add(moduleInfo);
+
+                // Load all entity .mtd files in this module's directory tree
+                var allMtdInModule = Directory.GetFiles(moduleDir, "*.mtd", SearchOption.AllDirectories);
+                foreach (var entityMtdFile in allMtdInModule)
+                {
+                    if (Path.GetFileName(entityMtdFile).Equals("Module.mtd", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    try
+                    {
+                        var entityJson = await File.ReadAllTextAsync(entityMtdFile);
+                        using var entityDoc = JsonDocument.Parse(entityJson);
+                        var entityRoot = entityDoc.RootElement;
+
+                        var entityType = GetString(entityRoot, "$type");
+                        if (!entityType.Contains("EntityMetadata") && !entityType.Contains("DocumentMetadata") &&
+                            !entityType.Contains("TaskMetadata") && !entityType.Contains("AssignmentMetadata"))
+                            continue;
+
+                        var entityName = GetString(entityRoot, "Name");
+                        var entityGuid = GetString(entityRoot, "NameGuid");
+                        var baseGuid = GetString(entityRoot, "BaseGuid");
+                        var ancestorGuid = GetString(entityRoot, "AncestorGuid");
+
+                        if (string.IsNullOrEmpty(entityGuid))
+                            continue;
+
+                        var props = new List<PropertyInfo>();
+                        if (entityRoot.TryGetProperty("Properties", out var propsEl) && propsEl.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var prop in propsEl.EnumerateArray())
+                            {
+                                var propName = GetString(prop, "Name");
+                                var propCode = GetString(prop, "Code");
+                                var propType = GetString(prop, "$type");
+                                if (!string.IsNullOrEmpty(propName))
+                                    props.Add(new PropertyInfo(propName, string.IsNullOrEmpty(propCode) ? propName : propCode, propType));
+                            }
+                        }
+
+                        entities.Add(new EntityInfo(
+                            entityName,
+                            entityGuid.ToLowerInvariant(),
+                            baseGuid.ToLowerInvariant(),
+                            string.IsNullOrEmpty(ancestorGuid) ? null : ancestorGuid.ToLowerInvariant(),
+                            moduleGuid.ToLowerInvariant(),
+                            entityMtdFile,
+                            props));
+                    }
+                    catch
+                    {
+                        // Skip unparseable entity files
+                    }
+                }
+            }
+            catch
+            {
+                // Skip unparseable module files
+            }
+        }
+
+        return (modules, entities);
+    }
+
+    internal static string RenderHealth(string solutionPath, List<ModuleInfo> modules, List<EntityInfo> entities)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Отчёт о состоянии решения Directum RX");
+        sb.AppendLine();
+        sb.AppendLine($"**Решение:** `{solutionPath}`");
+        sb.AppendLine();
+
+        var platformModules = modules.Where(m => m.IsPlatform).ToList();
+        var customModules = modules.Where(m => !m.IsPlatform).ToList();
+
+        sb.AppendLine("## Общая статистика");
+        sb.AppendLine();
+        sb.AppendLine($"| Показатель | Значение |");
+        sb.AppendLine($"|------------|----------|");
+        sb.AppendLine($"| Всего модулей | **{modules.Count}** |");
+        sb.AppendLine($"| Платформенных модулей | {platformModules.Count} |");
+        sb.AppendLine($"| Кастомных модулей | {customModules.Count} |");
+        sb.AppendLine($"| Всего сущностей | **{entities.Count}** |");
+        sb.AppendLine();
+
+        // Duplicate GUID detection
+        var guidGroups = entities
+            .GroupBy(e => e.Guid)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        sb.AppendLine("## Дубликаты GUID");
+        sb.AppendLine();
+        if (guidGroups.Count == 0)
+        {
+            sb.AppendLine("Дубликатов GUID не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено дубликатов: {guidGroups.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| GUID | Сущности |");
+            sb.AppendLine("|------|----------|");
+            foreach (var grp in guidGroups)
+                sb.AppendLine($"| `{grp.Key}` | {string.Join(", ", grp.Select(e => e.Name))} |");
+        }
+        sb.AppendLine();
+
+        // Override conflicts
+        var conflicts = FindOverrideConflicts(modules, entities);
+        sb.AppendLine("## Конфликты перекрытий");
+        sb.AppendLine();
+        if (conflicts.Count == 0)
+        {
+            sb.AppendLine("Конфликтов перекрытий не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено конфликтов: {conflicts.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Предок | Модуль A | Сущность A | Модуль B | Сущность B |");
+            sb.AppendLine("|--------|----------|-----------|----------|-----------|");
+            foreach (var (ancestorGuid, e1, e2, mod1, mod2) in conflicts)
+                sb.AppendLine($"| `{ancestorGuid}` | {mod1} | {e1} | {mod2} | {e2} |");
+        }
+        sb.AppendLine();
+
+        // Orphan custom modules
+        var orphans = FindOrphanCustomModules(modules);
+        sb.AppendLine("## Сиротские кастомные модули");
+        sb.AppendLine();
+        if (orphans.Count == 0)
+        {
+            sb.AppendLine("Сиротских модулей не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено сиротских модулей: {orphans.Count}**");
+            sb.AppendLine();
+            foreach (var m in orphans)
+                sb.AppendLine($"- **{m.Name}** (`{m.Guid}`)");
+        }
+        sb.AppendLine();
+
+        // Missing dependencies
+        var allGuids = new HashSet<string>(modules.Select(m => m.Guid), StringComparer.OrdinalIgnoreCase);
+        var missing = new List<(string ModuleName, string MissingGuid)>();
+        foreach (var module in modules)
+        {
+            foreach (var dep in module.DependencyGuids)
+            {
+                if (!allGuids.Contains(dep))
+                    missing.Add((module.Name, dep));
+            }
+        }
+
+        sb.AppendLine("## Отсутствующие зависимости");
+        sb.AppendLine();
+        if (missing.Count == 0)
+        {
+            sb.AppendLine("Отсутствующих зависимостей не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено отсутствующих зависимостей: {missing.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Модуль | Отсутствующий GUID |");
+            sb.AppendLine("|--------|--------------------|");
+            foreach (var (modName, guid) in missing)
+                sb.AppendLine($"| {modName} | `{guid}` |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    internal static string RenderConflicts(List<ModuleInfo> modules, List<EntityInfo> entities)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Анализ конфликтов перекрытий");
+        sb.AppendLine();
+
+        var conflicts = FindOverrideConflicts(modules, entities);
+
+        if (conflicts.Count == 0)
+        {
+            sb.AppendLine("Конфликтов перекрытий не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено конфликтов: {conflicts.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Предок | Модуль A | Сущность A | Модуль B | Сущность B |");
+            sb.AppendLine("|--------|----------|-----------|----------|-----------|");
+            foreach (var (ancestorGuid, e1, e2, mod1, mod2) in conflicts)
+                sb.AppendLine($"| `{ancestorGuid}` | {mod1} | {e1} | {mod2} | {e2} |");
+        }
+        sb.AppendLine();
+
+        // Also check property Code collisions in inheritance hierarchies
+        var codeCollisions = FindPropertyCodeCollisions(entities);
+
+        sb.AppendLine("## Коллизии Code свойств в иерархиях наследования");
+        sb.AppendLine();
+        if (codeCollisions.Count == 0)
+        {
+            sb.AppendLine("Коллизий Code свойств не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено коллизий: {codeCollisions.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Сущность A | Сущность B | Code |");
+            sb.AppendLine("|-----------|-----------|------|");
+            foreach (var (e1, e2, code) in codeCollisions)
+                sb.AppendLine($"| {e1} | {e2} | `{code}` |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    internal static string RenderOrphans(List<ModuleInfo> modules, List<EntityInfo> entities)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Анализ сиротских элементов");
+        sb.AppendLine();
+
+        var orphanModules = FindOrphanCustomModules(modules);
+
+        sb.AppendLine("## Сиротские кастомные модули");
+        sb.AppendLine();
+        if (orphanModules.Count == 0)
+        {
+            sb.AppendLine("Сиротских модулей не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено: {orphanModules.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Модуль | GUID | Путь |");
+            sb.AppendLine("|--------|------|------|");
+            foreach (var m in orphanModules)
+                sb.AppendLine($"| **{m.Name}** | `{m.Guid}` | `{m.Path}` |");
+        }
+        sb.AppendLine();
+
+        // Entity .mtd files not referenced in any Module.mtd's Entities array
+        var allReferencedEntityGuids = new HashSet<string>(
+            modules.SelectMany(m => m.EntityGuids),
+            StringComparer.OrdinalIgnoreCase);
+
+        var orphanEntities = entities
+            .Where(e => !allReferencedEntityGuids.Contains(e.Guid))
+            .OrderBy(e => e.Name)
+            .ToList();
+
+        sb.AppendLine("## Сущности не упомянутые в Module.mtd");
+        sb.AppendLine();
+        if (orphanEntities.Count == 0)
+        {
+            sb.AppendLine("Все сущности упомянуты в Module.mtd.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено: {orphanEntities.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Сущность | GUID | Файл |");
+            sb.AppendLine("|----------|------|------|");
+            foreach (var e in orphanEntities)
+                sb.AppendLine($"| **{e.Name}** | `{e.Guid}` | `{e.FilePath}` |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    internal static string RenderDuplicates(List<ModuleInfo> modules, List<EntityInfo> entities)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Анализ дубликатов");
+        sb.AppendLine();
+
+        // Duplicate NameGuid
+        var guidGroups = entities
+            .GroupBy(e => e.Guid)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        sb.AppendLine("## Дубликаты NameGuid сущностей");
+        sb.AppendLine();
+        if (guidGroups.Count == 0)
+        {
+            sb.AppendLine("Дубликатов GUID не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено: {guidGroups.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| GUID | Сущности |");
+            sb.AppendLine("|------|----------|");
+            foreach (var grp in guidGroups)
+                sb.AppendLine($"| `{grp.Key}` | {string.Join(", ", grp.Select(e => e.Name))} |");
+        }
+        sb.AppendLine();
+
+        // Property Code collisions
+        var codeCollisions = FindPropertyCodeCollisions(entities);
+
+        sb.AppendLine("## Коллизии Code свойств");
+        sb.AppendLine();
+        if (codeCollisions.Count == 0)
+        {
+            sb.AppendLine("Коллизий Code свойств не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено: {codeCollisions.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Сущность A | Сущность B | Code |");
+            sb.AppendLine("|-----------|-----------|------|");
+            foreach (var (e1, e2, code) in codeCollisions)
+                sb.AppendLine($"| {e1} | {e2} | `{code}` |");
+        }
+        sb.AppendLine();
+
+        // Duplicate enum value names
+        var enumDuplicates = FindDuplicateEnumValues(entities);
+
+        sb.AppendLine("## Дубликаты значений перечислений");
+        sb.AppendLine();
+        if (enumDuplicates.Count == 0)
+        {
+            sb.AppendLine("Дубликатов значений перечислений не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено: {enumDuplicates.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Сущность | Перечисление | Дублированные значения |");
+            sb.AppendLine("|----------|-------------|------------------------|");
+            foreach (var (entityName, enumName, values) in enumDuplicates)
+                sb.AppendLine($"| {entityName} | {enumName} | {string.Join(", ", values)} |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    internal static async Task<string> RenderVersions(List<ModuleInfo> modules, string solutionPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Анализ версий модулей");
+        sb.AppendLine();
+
+        var versionInfos = new List<(string ModuleName, string ModulePath, string Version)>();
+
+        foreach (var module in modules)
+        {
+            var packageInfoPath = Path.Combine(module.Path, "PackageInfo.xml");
+            if (!File.Exists(packageInfoPath))
+                continue;
+
+            try
+            {
+                var xml = await File.ReadAllTextAsync(packageInfoPath);
+                var xdoc = XDocument.Parse(xml);
+                var version = xdoc.Root?.Element("Version")?.Value ?? "";
+                if (!string.IsNullOrEmpty(version))
+                    versionInfos.Add((module.Name, module.Path, version));
+            }
+            catch
+            {
+                // Skip unreadable XML
+            }
+        }
+
+        if (versionInfos.Count == 0)
+        {
+            sb.AppendLine("PackageInfo.xml не найдены ни в одном модуле.");
+            return sb.ToString();
+        }
+
+        sb.AppendLine("## Версии пакетов");
+        sb.AppendLine();
+        sb.AppendLine("| Модуль | Версия |");
+        sb.AppendLine("|--------|--------|");
+        foreach (var (name, _, version) in versionInfos.OrderBy(v => v.ModuleName))
+            sb.AppendLine($"| {name} | `{version}` |");
+        sb.AppendLine();
+
+        // Find mismatches between interdependent modules
+        var moduleByName = modules.ToDictionary(m => m.Name, StringComparer.OrdinalIgnoreCase);
+        var versionByName = versionInfos.ToDictionary(v => v.ModuleName, v => v.Version, StringComparer.OrdinalIgnoreCase);
+        var moduleByGuid = modules.ToDictionary(m => m.Guid, StringComparer.OrdinalIgnoreCase);
+
+        var mismatches = new List<(string ModuleA, string VersionA, string ModuleB, string VersionB)>();
+        var checked_ = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var module in modules)
+        {
+            if (!versionByName.TryGetValue(module.Name, out var versionA))
+                continue;
+
+            foreach (var depGuid in module.DependencyGuids)
+            {
+                if (!moduleByGuid.TryGetValue(depGuid, out var depModule))
+                    continue;
+
+                if (!versionByName.TryGetValue(depModule.Name, out var versionB))
+                    continue;
+
+                var key = string.Compare(module.Name, depModule.Name, StringComparison.OrdinalIgnoreCase) < 0
+                    ? $"{module.Name}|{depModule.Name}"
+                    : $"{depModule.Name}|{module.Name}";
+
+                if (checked_.Contains(key))
+                    continue;
+
+                checked_.Add(key);
+
+                if (!string.Equals(versionA, versionB, StringComparison.OrdinalIgnoreCase))
+                    mismatches.Add((module.Name, versionA, depModule.Name, versionB));
+            }
+        }
+
+        sb.AppendLine("## Несоответствия версий между зависимыми модулями");
+        sb.AppendLine();
+        if (mismatches.Count == 0)
+        {
+            sb.AppendLine("Несоответствий версий не обнаружено.");
+        }
+        else
+        {
+            sb.AppendLine($"**Обнаружено несоответствий: {mismatches.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Модуль A | Версия A | Модуль B | Версия B |");
+            sb.AppendLine("|----------|----------|----------|----------|");
+            foreach (var (modA, verA, modB, verB) in mismatches)
+                sb.AppendLine($"| {modA} | `{verA}` | {modB} | `{verB}` |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    private static List<(string AncestorGuid, string EntityA, string EntityB, string ModuleA, string ModuleB)> FindOverrideConflicts(
+        List<ModuleInfo> modules, List<EntityInfo> entities)
+    {
+        var moduleByGuid = modules.ToDictionary(m => m.Guid, StringComparer.OrdinalIgnoreCase);
+
+        var overrideGroups = entities
+            .Where(e => !string.IsNullOrEmpty(e.AncestorGuid))
+            .GroupBy(e => e.AncestorGuid!)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        var conflicts = new List<(string, string, string, string, string)>();
+
+        foreach (var grp in overrideGroups)
+        {
+            var overrides = grp.ToList();
+            for (var i = 0; i < overrides.Count; i++)
+            {
+                for (var j = i + 1; j < overrides.Count; j++)
+                {
+                    var e1 = overrides[i];
+                    var e2 = overrides[j];
+
+                    if (string.Equals(e1.ModuleGuid, e2.ModuleGuid, StringComparison.OrdinalIgnoreCase))
+                        continue; // Same module — not a conflict
+
+                    var mod1Name = moduleByGuid.TryGetValue(e1.ModuleGuid, out var mod1) ? mod1.Name : e1.ModuleGuid;
+                    var mod2Name = moduleByGuid.TryGetValue(e2.ModuleGuid, out var mod2) ? mod2.Name : e2.ModuleGuid;
+
+                    conflicts.Add((grp.Key, e1.Name, e2.Name, mod1Name, mod2Name));
+                }
+            }
+        }
+
+        return conflicts;
+    }
+
+    private static List<(string EntityA, string EntityB, string Code)> FindPropertyCodeCollisions(List<EntityInfo> entities)
+    {
+        var collisions = new List<(string, string, string)>();
+        // Use a safe lookup that tolerates duplicate GUIDs (they'll be caught by the duplicates check)
+        var entityByGuid = new Dictionary<string, EntityInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in entities)
+            entityByGuid.TryAdd(e.Guid, e);
+
+        // Build inheritance chains: for each entity collect all ancestor entity guids
+        var checkedPairs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in entities)
+        {
+            // Walk up the inheritance chain via BaseGuid
+            var ancestorChain = new List<EntityInfo>();
+            var current = entity;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            while (!string.IsNullOrEmpty(current.BaseGuid) && entityByGuid.TryGetValue(current.BaseGuid, out var parent))
+            {
+                if (visited.Contains(parent.Guid))
+                    break;
+                visited.Add(parent.Guid);
+                ancestorChain.Add(parent);
+                current = parent;
+            }
+
+            foreach (var ancestor in ancestorChain)
+            {
+                var pairKey = string.Compare(entity.Guid, ancestor.Guid, StringComparison.OrdinalIgnoreCase) < 0
+                    ? $"{entity.Guid}|{ancestor.Guid}"
+                    : $"{ancestor.Guid}|{entity.Guid}";
+
+                if (checkedPairs.Contains(pairKey))
+                    continue;
+                checkedPairs.Add(pairKey);
+
+                var codes1 = entity.Properties.Select(p => p.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var codes2 = ancestor.Properties.Select(p => p.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var code in codes1.Intersect(codes2, StringComparer.OrdinalIgnoreCase))
+                    collisions.Add((entity.Name, ancestor.Name, code));
+            }
+        }
+
+        return collisions;
+    }
+
+    private static List<(string EntityName, string EnumName, List<string> DuplicateValues)> FindDuplicateEnumValues(List<EntityInfo> entities)
+    {
+        // This is a simplified check — duplicate property Names within the same entity's properties
+        var result = new List<(string, string, List<string>)>();
+
+        foreach (var entity in entities)
+        {
+            var nameGroups = entity.Properties
+                .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var grp in nameGroups)
+                result.Add((entity.Name, "Properties", grp.Select(p => p.Name).ToList()));
+        }
+
+        return result;
+    }
+
+    private static List<ModuleInfo> FindOrphanCustomModules(List<ModuleInfo> modules)
+    {
+        var allReferencedGuids = new HashSet<string>(
+            modules.SelectMany(m => m.DependencyGuids),
+            StringComparer.OrdinalIgnoreCase);
+
+        return modules
+            .Where(m => !m.IsPlatform && !allReferencedGuids.Contains(m.Guid))
+            .OrderBy(m => m.Name)
+            .ToList();
+    }
+
+    private static string GetString(JsonElement el, string propertyName)
+    {
+        return el.TryGetProperty(propertyName, out var val) && val.ValueKind == JsonValueKind.String
+            ? val.GetString() ?? ""
+            : "";
+    }
+}
