@@ -138,6 +138,44 @@ public static class PackageValidator
         return (results, mtdFiles.Length, resxFiles.Length);
     }
 
+    /// <summary>
+    /// Runs all 7 checks using a pre-opened PackageWorkspace.
+    /// Documents are NOT disposed — the workspace owns them.
+    /// </summary>
+    public static async Task<List<ValidationResult>> RunAllChecks(PackageWorkspace ws)
+    {
+        var results = new List<ValidationResult>();
+
+        results.AddRange(Check1_CollectionOnDatabookEntry(ws.Entities));
+        results.AddRange(Check2_CrossModuleNavProperties(ws.Entities, ws.Modules));
+        results.AddRange(Check3_ReservedEnumNames(ws.Entities));
+        results.AddRange(Check4_DuplicateCodes(ws.Entities));
+        results.AddRange(Check5_AttachmentGroupConsistency(ws.Entities));
+        results.AddRange(await Check6_ResxKeyFormat(ws.ResxFiles));
+        results.AddRange(Check7_AnalyzersDirectory(ws.WorkDir));
+
+        return results;
+    }
+
+    /// <summary>
+    /// Runs all 7 checks using a pre-opened PackageWorkspace, returning legacy CheckResult format.
+    /// Documents are NOT disposed — the workspace owns them.
+    /// </summary>
+    public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(PackageWorkspace ws)
+    {
+        var results = new List<CheckResult>();
+
+        results.Add(Check1_CollectionOnDatabookEntryLegacy(ws.Entities));
+        results.Add(Check2_CrossModuleNavPropertiesLegacy(ws.Entities, ws.Modules));
+        results.Add(Check3_ReservedEnumNamesLegacy(ws.Entities));
+        results.Add(Check4_DuplicateCodesLegacy(ws.Entities));
+        results.Add(Check5_AttachmentGroupConsistencyLegacy(ws.Entities));
+        results.Add(await Check6_ResxKeyFormatLegacy(ws.ResxFiles));
+        results.Add(Check7_AnalyzersDirectoryLegacy(ws.WorkDir));
+
+        return (results, ws.MtdFiles.Length, ws.ResxFiles.Length);
+    }
+
     #region Check1: CollectionPropertyMetadata on DatabookEntry
 
     public static IEnumerable<ValidationResult> Check1_CollectionOnDatabookEntry(
@@ -670,6 +708,76 @@ public static class PackageValidator
             "Скопируйте содержимое <DDS_INSTALL>/Analyzers в .sds/Libraries/Analyzers/. " +
             "Примечание: эта проверка актуальна для git-репозитория решения, а не для .dat пакета."
         );
+    }
+
+    #endregion
+
+    #region Helpers (public for tool reuse)
+
+    /// <summary>
+    /// Checks if a JSON element represents a DatabookEntry-derived entity.
+    /// </summary>
+    public static bool IsDatabookEntryDerivedPublic(JsonElement root, List<(string Path, JsonDocument Doc)> entities)
+        => IsDatabookEntryDerived(root, entities);
+
+    /// <summary>
+    /// Checks if a JSON element has CollectionPropertyMetadata.
+    /// </summary>
+    public static bool HasCollectionPropertiesPublic(JsonElement root)
+        => HasCollectionProperties(root);
+
+    /// <summary>
+    /// Regex to detect Resource_GUID keys in resx files.
+    /// </summary>
+    public static bool IsResourceGuidKey(string keyName)
+        => ResourceGuidKeyPattern.IsMatch(keyName);
+
+    /// <summary>
+    /// Builds a map: entityName -> list of property names, from MTD files.
+    /// Used for resolving resx Resource_GUID keys to Property_Name keys.
+    /// </summary>
+    public static async Task<Dictionary<string, List<string>>> BuildMtdPropertyMap(
+        string[] mtdFiles, CancellationToken ct = default)
+    {
+        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var mtdFile in mtdFiles)
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(mtdFile, ct);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var typeProp = root.TryGetProperty("$type", out var tp) ? tp.GetString() ?? "" : "";
+                if (typeProp.Contains("ModuleMetadata")) continue;
+
+                var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(entityName)) continue;
+
+                var propNames = new List<string>();
+                if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var prop in props.EnumerateArray())
+                    {
+                        if (prop.TryGetProperty("Name", out var pn))
+                        {
+                            var propName = pn.GetString();
+                            if (!string.IsNullOrEmpty(propName))
+                                propNames.Add(propName);
+                        }
+                    }
+                }
+
+                map[entityName] = propNames;
+            }
+            catch
+            {
+                // Skip unparseable files
+            }
+        }
+
+        return map;
     }
 
     #endregion

@@ -11,12 +11,14 @@ public static class PathGuard
         var fullPath = Path.GetFullPath(path);
         var allowedPaths = new[]
         {
-            Path.GetFullPath(solutionPath),
-            Path.GetFullPath(Path.GetTempPath())
+            Path.GetFullPath(solutionPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
         };
         return allowedPaths.Any(bp =>
             bp.Length >= 4 &&
-            fullPath.StartsWith(bp, StringComparison.OrdinalIgnoreCase));
+            (string.Equals(fullPath, bp, StringComparison.OrdinalIgnoreCase) ||
+             fullPath.StartsWith(bp + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+             fullPath.StartsWith(bp + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)));
     }
 
     public static string DenyMessage(string path) =>

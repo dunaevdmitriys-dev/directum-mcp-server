@@ -70,7 +70,7 @@ public class BulkCompleteTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при массовом выполнении: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось выполнить массовое завершение заданий. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 

@@ -13,37 +13,37 @@ public class SyncCheckTool
     [McpServerTool(Name = "sync_check")]
     [Description("Сравнивает локальную папку с исходниками разработчика и опубликованный модуль на стенде (AppliedModules). Находит расхождения в .mtd и .resx файлах. Чисто файловый инструмент, не использует OData.")]
     public async Task<string> SyncCheck(
-        [Description("Путь к папке с исходниками разработчика")] string source_path,
-        [Description("Путь к папке с опубликованным модулем на стенде (обычно в AppliedModules)")] string published_path)
+        [Description("Путь к папке с исходниками разработчика")] string sourcePath,
+        [Description("Путь к папке с опубликованным модулем на стенде (обычно в AppliedModules)")] string publishedPath)
     {
-        if (string.IsNullOrWhiteSpace(source_path))
-            return "**ОШИБКА**: Параметр `source_path` не может быть пустым.";
-        if (string.IsNullOrWhiteSpace(published_path))
-            return "**ОШИБКА**: Параметр `published_path` не может быть пустым.";
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            return "**ОШИБКА**: Параметр `sourcePath` не может быть пустым.";
+        if (string.IsNullOrWhiteSpace(publishedPath))
+            return "**ОШИБКА**: Параметр `publishedPath` не может быть пустым.";
 
-        if (!PathGuard.IsAllowed(source_path))
-            return PathGuard.DenyMessage(source_path);
-        if (!PathGuard.IsAllowed(published_path))
-            return PathGuard.DenyMessage(published_path);
+        if (!PathGuard.IsAllowed(sourcePath))
+            return PathGuard.DenyMessage(sourcePath);
+        if (!PathGuard.IsAllowed(publishedPath))
+            return PathGuard.DenyMessage(publishedPath);
 
-        if (!Directory.Exists(source_path))
-            return $"**ОШИБКА**: Директория исходников не найдена: `{source_path}`";
-        if (!Directory.Exists(published_path))
-            return $"**ОШИБКА**: Директория стенда не найдена: `{published_path}`";
+        if (!Directory.Exists(sourcePath))
+            return $"**ОШИБКА**: Директория исходников не найдена: `{sourcePath}`";
+        if (!Directory.Exists(publishedPath))
+            return $"**ОШИБКА**: Директория стенда не найдена: `{publishedPath}`";
 
         var sb = new StringBuilder();
         sb.AppendLine("# Сравнение исходников и стенда");
         sb.AppendLine();
-        sb.AppendLine($"**Исходники:** `{source_path}`");
-        sb.AppendLine($"**Стенд:** `{published_path}`");
+        sb.AppendLine($"**Исходники:** `{sourcePath}`");
+        sb.AppendLine($"**Стенд:** `{publishedPath}`");
         sb.AppendLine();
 
         // --- PackageInfo.xml ---
-        await AppendPackageInfoDiff(sb, source_path, published_path);
+        await AppendPackageInfoDiff(sb, sourcePath, publishedPath);
 
         // --- Collect .mtd files ---
-        var sourceMtd = CollectFiles(source_path, ".mtd");
-        var publishedMtd = CollectFiles(published_path, ".mtd");
+        var sourceMtd = CollectFiles(sourcePath, ".mtd");
+        var publishedMtd = CollectFiles(publishedPath, ".mtd");
 
         var allMtdKeys = new HashSet<string>(sourceMtd.Keys, StringComparer.OrdinalIgnoreCase);
         allMtdKeys.UnionWith(publishedMtd.Keys);
@@ -133,8 +133,8 @@ public class SyncCheckTool
         }
 
         // --- Resx comparison ---
-        var sourceResx = CollectFiles(source_path, ".resx");
-        var publishedResx = CollectFiles(published_path, ".resx");
+        var sourceResx = CollectFiles(sourcePath, ".resx");
+        var publishedResx = CollectFiles(publishedPath, ".resx");
 
         var allResxKeys = new HashSet<string>(sourceResx.Keys, StringComparer.OrdinalIgnoreCase);
         allResxKeys.UnionWith(publishedResx.Keys);

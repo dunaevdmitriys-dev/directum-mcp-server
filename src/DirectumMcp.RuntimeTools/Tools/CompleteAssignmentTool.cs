@@ -63,7 +63,7 @@ public class CompleteAssignmentTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при выполнении задания {assignmentId}: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось выполнить задание {assignmentId}. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 }

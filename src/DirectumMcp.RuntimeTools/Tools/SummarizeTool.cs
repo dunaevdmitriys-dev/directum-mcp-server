@@ -143,7 +143,7 @@ public class SummarizeTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при получении информации о документе: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось получить информацию о документе. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 }

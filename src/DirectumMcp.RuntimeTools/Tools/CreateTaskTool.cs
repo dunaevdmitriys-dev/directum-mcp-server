@@ -140,7 +140,7 @@ public class CreateTaskTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при создании задачи: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось создать задачу. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 

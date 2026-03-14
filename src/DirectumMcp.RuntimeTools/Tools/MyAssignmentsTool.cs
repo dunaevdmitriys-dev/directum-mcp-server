@@ -50,7 +50,7 @@ public class MyAssignmentsTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при получении заданий: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось получить задания. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 
@@ -97,6 +97,10 @@ public class MyAssignmentsTool
             sb.AppendLine();
             sb.AppendLine($"**ПРОСРОЧЕНО: {overdueCount} из {items.Count} заданий** (отмечены `!!!`)");
         }
+
+        sb.AppendLine();
+        sb.AppendLine("*Для выполнения задания: `complete assignmentId=<ID>`*");
+        sb.AppendLine("*Для массового выполнения: `bulk_complete`*");
 
         return sb.ToString();
     }

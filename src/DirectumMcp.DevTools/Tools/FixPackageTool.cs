@@ -3,9 +3,9 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using DirectumMcp.Core.Helpers;
+using DirectumMcp.Core.Validators;
 using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
@@ -13,29 +13,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class FixPackageTool
 {
-    private static readonly HashSet<string> DatabookEntryGuids = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "04581d26-0780-4cfd-b3cd-c2cafc5798b0", // DatabookEntry
-        "a2600e68-3e0a-4455-9f63-20bb01661658", // RecipientBase
-    };
-
-    private static readonly HashSet<string> CSharpReservedWords = new(StringComparer.Ordinal)
-    {
-        "new", "event", "class", "public", "private", "return", "void", "string",
-        "int", "bool", "object", "base", "this", "null", "true", "false", "default",
-        "switch", "case", "break", "continue", "for", "foreach", "while", "do",
-        "if", "else", "try", "catch", "finally", "throw", "using", "namespace",
-        "static", "abstract", "virtual", "override", "sealed", "readonly", "const",
-        "delegate", "interface", "struct", "enum", "var", "is", "as", "in", "out",
-        "ref", "params", "typeof", "sizeof", "checked", "unchecked", "fixed",
-        "unsafe", "volatile", "extern", "lock", "goto", "implicit", "explicit",
-        "operator", "stackalloc"
-    };
-
-    private static readonly Regex ResourceGuidKeyPattern = new(
-        @"^Resource_[0-9a-fA-F]{8}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{4}[-]?[0-9a-fA-F]{12}$",
-        RegexOptions.Compiled);
-
     [McpServerTool(Name = "fix_package")]
     [Description("Автоисправление ошибок .dat пакета Directum RX (resx-ключи, дубли Code, enum, Constraints). dryRun=true по умолчанию.")]
     public async Task<string> Fix(
@@ -51,235 +28,54 @@ public class FixPackageTool
         if (!PathGuard.IsAllowed(packagePath))
             return PathGuard.DenyMessage(packagePath);
 
-        string workDir;
-        bool isTempDir = false;
-        bool isDatFile = false;
+        var (workspace, error) = await PackageWorkspace.OpenAsync(packagePath, includeRuResx: true, ct: cancellationToken);
+        if (workspace == null)
+            return error!;
 
-        if (File.Exists(packagePath) && packagePath.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
+        using (workspace)
         {
-            workDir = Path.Combine(Path.GetTempPath(), "drx_fix_" + Guid.NewGuid().ToString("N")[..8]);
-            Directory.CreateDirectory(workDir);
-            isTempDir = true;
-            isDatFile = true;
-
-            using var archive = ZipFile.OpenRead(packagePath);
-            foreach (var entry in archive.Entries)
-            {
-                var destPath = Path.GetFullPath(Path.Combine(workDir, entry.FullName));
-                if (!destPath.StartsWith(Path.GetFullPath(workDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException($"Zip entry '{entry.FullName}' would extract outside target directory.");
-
-                var dir = Path.GetDirectoryName(destPath);
-                if (dir != null) Directory.CreateDirectory(dir);
-                if (!string.IsNullOrEmpty(entry.Name))
-                    entry.ExtractToFile(destPath, overwrite: true);
-            }
-        }
-        else if (Directory.Exists(packagePath))
-        {
-            workDir = packagePath;
-        }
-        else
-        {
-            return $"**ОШИБКА**: Путь не найден: `{packagePath}`\nУкажите путь к .dat файлу или распакованной директории.";
-        }
-
-        try
-        {
-            var mtdFiles = Directory.GetFiles(workDir, "*.mtd", SearchOption.AllDirectories);
-            var resxFiles = Directory.GetFiles(workDir, "*System.resx", SearchOption.AllDirectories)
-                .Concat(Directory.GetFiles(workDir, "*System.ru.resx", SearchOption.AllDirectories))
-                .Distinct()
-                .ToArray();
-
-            // Parse all MTD files into raw JSON for validation
-            var entities = new List<(string Path, JsonDocument Doc)>();
-            var modules = new List<(string Path, JsonDocument Doc)>();
-
-            foreach (var f in mtdFiles)
-            {
-                var json = await File.ReadAllTextAsync(f, cancellationToken);
-                var doc = JsonDocument.Parse(json);
-                var typeProp = doc.RootElement.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-                if (typeProp.Contains("ModuleMetadata"))
-                    modules.Add((f, doc));
-                else
-                    entities.Add((f, doc));
-            }
+            // Detect manual-only issues using PackageValidator (single source of truth)
+            var validationResults = await PackageValidator.RunAllChecks(workspace);
 
             var autoFixed = new List<ChangeRecord>();
             var manualRequired = new List<ManualIssue>();
 
-            // Check 1: CollectionProperty on DatabookEntry (manual only)
-            Check1_CollectionOnDatabookEntry(entities, manualRequired);
+            // Check 1 & 2 & 7: manual-only issues (detected by PackageValidator)
+            foreach (var r in validationResults)
+            {
+                if (!r.CanAutoFix)
+                {
+                    manualRequired.Add(new ManualIssue(r.CheckName, Path.GetFileName(r.FilePath ?? ""), r.Message));
+                }
+            }
 
-            // Check 2: Cross-module NavigationProperty (manual only)
-            Check2_CrossModuleNavProperties(entities, modules, manualRequired);
-
-            // Check 3: Reserved enum names (auto-fixable)
-            var check3Changes = await FixCheck3_ReservedEnumNames(entities, workDir, dryRun, cancellationToken);
-            autoFixed.AddRange(check3Changes);
+            // Check 3: Reserved enum names (auto-fixable) — always scan, fix logic has its own detection
+            autoFixed.AddRange(await FixCheck3_ReservedEnumNames(workspace.Entities, dryRun, cancellationToken));
 
             // Check 4: Duplicate Codes (auto-fixable)
-            var check4Changes = await FixCheck4_DuplicateCodes(entities, workDir, dryRun, cancellationToken);
-            autoFixed.AddRange(check4Changes);
+            autoFixed.AddRange(await FixCheck4_DuplicateCodes(workspace.Entities, dryRun, cancellationToken));
 
             // Check 5: AttachmentGroup Constraints (auto-fixable)
-            var check5Changes = await FixCheck5_Constraints(entities, workDir, dryRun, cancellationToken);
-            autoFixed.AddRange(check5Changes);
+            autoFixed.AddRange(await FixCheck5_Constraints(workspace.Entities, dryRun, cancellationToken));
 
             // Check 6: System.resx key format (auto-fixable)
-            var check6Changes = await FixCheck6_ResxKeys(resxFiles, mtdFiles, workDir, dryRun, cancellationToken);
-            autoFixed.AddRange(check6Changes);
-
-            // Check 7: Analyzers directory (manual only)
-            Check7_AnalyzersDirectory(workDir, manualRequired);
-
-            // Dispose documents
-            foreach (var (_, doc) in entities) doc.Dispose();
-            foreach (var (_, doc) in modules) doc.Dispose();
+            autoFixed.AddRange(await FixCheck6_ResxKeys(workspace.ResxFiles, workspace.MtdFiles, dryRun, cancellationToken));
 
             // Repack if needed
-            if (!dryRun && isDatFile && autoFixed.Count > 0)
+            if (!dryRun && workspace.IsDatFile && autoFixed.Count > 0)
             {
                 File.Delete(packagePath);
-                ZipFile.CreateFromDirectory(workDir, packagePath);
+                ZipFile.CreateFromDirectory(workspace.WorkDir, packagePath);
             }
 
             return FormatFixReport(packagePath, autoFixed, manualRequired, dryRun);
         }
-        finally
-        {
-            if (isTempDir)
-            {
-                try { Directory.Delete(workDir, true); } catch { /* best effort */ }
-            }
-        }
     }
-
-    #region Check1 & Check2 & Check7 — Manual Only
-
-    private static void Check1_CollectionOnDatabookEntry(
-        List<(string Path, JsonDocument Doc)> entities,
-        List<ManualIssue> issues)
-    {
-        foreach (var (path, doc) in entities)
-        {
-            var root = doc.RootElement;
-            if (!HasCollectionProperties(root))
-                continue;
-
-            if (IsDatabookEntryDerived(root, entities))
-            {
-                var name = root.TryGetProperty("Name", out var n) ? n.GetString() : Path.GetFileNameWithoutExtension(path);
-                issues.Add(new ManualIssue("Check1",
-                    Path.GetFileName(path),
-                    $"DatabookEntry `{name}` содержит CollectionPropertyMetadata. " +
-                    "Удалите коллекции или смените базовый тип на Document."));
-            }
-        }
-    }
-
-    private static bool HasCollectionProperties(JsonElement root)
-    {
-        if (!root.TryGetProperty("Properties", out var props) || props.ValueKind != JsonValueKind.Array)
-            return false;
-
-        foreach (var prop in props.EnumerateArray())
-        {
-            if (prop.TryGetProperty("$type", out var t) &&
-                (t.GetString()?.Contains("CollectionPropertyMetadata") ?? false))
-                return true;
-        }
-        return false;
-    }
-
-    private static bool IsDatabookEntryDerived(JsonElement root, List<(string Path, JsonDocument Doc)> entities)
-    {
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var current = root;
-
-        while (true)
-        {
-            if (!current.TryGetProperty("BaseGuid", out var baseGuidEl))
-                return false;
-            var baseGuid = baseGuidEl.GetString();
-            if (string.IsNullOrEmpty(baseGuid)) return false;
-            if (DatabookEntryGuids.Contains(baseGuid)) return true;
-            if (!visited.Add(baseGuid)) return false;
-
-            var baseEntity = entities.FirstOrDefault(e =>
-            {
-                var r = e.Doc.RootElement;
-                return r.TryGetProperty("NameGuid", out var ng) &&
-                       string.Equals(ng.GetString(), baseGuid, StringComparison.OrdinalIgnoreCase);
-            });
-
-            if (baseEntity.Doc == null) return false;
-            current = baseEntity.Doc.RootElement;
-        }
-    }
-
-    private static void Check2_CrossModuleNavProperties(
-        List<(string Path, JsonDocument Doc)> entities,
-        List<(string Path, JsonDocument Doc)> modules,
-        List<ManualIssue> issues)
-    {
-        var packageEntityGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (_, doc) in entities)
-        {
-            if (doc.RootElement.TryGetProperty("NameGuid", out var ng))
-                packageEntityGuids.Add(ng.GetString() ?? "");
-        }
-
-        foreach (var (path, doc) in entities)
-        {
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("Properties", out var props) || props.ValueKind != JsonValueKind.Array)
-                continue;
-
-            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() : "?";
-
-            foreach (var prop in props.EnumerateArray())
-            {
-                var typeName = prop.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-                if (!typeName.Contains("NavigationPropertyMetadata")) continue;
-                if (!prop.TryGetProperty("EntityGuid", out var egEl)) continue;
-
-                var entityGuid = egEl.GetString() ?? "";
-                if (string.IsNullOrEmpty(entityGuid) || packageEntityGuids.Contains(entityGuid))
-                    continue;
-
-                var propName = prop.TryGetProperty("Name", out var pn) ? pn.GetString() : "?";
-                issues.Add(new ManualIssue("Check2",
-                    Path.GetFileName(path),
-                    $"`{entityName}.{propName}` -> EntityGuid `{entityGuid}` (внешняя ссылка). " +
-                    "Убедитесь, что модуль-источник указан в Dependencies."));
-            }
-        }
-    }
-
-    private static void Check7_AnalyzersDirectory(string workDir, List<ManualIssue> issues)
-    {
-        var sdsDir = Path.Combine(workDir, ".sds", "Libraries", "Analyzers");
-        var exists = Directory.Exists(sdsDir);
-        var hasDlls = exists && Directory.GetFiles(sdsDir, "*.dll").Length > 0;
-
-        if (!exists)
-            issues.Add(new ManualIssue("Check7", ".sds/Libraries/Analyzers/",
-                "Директория Analyzers не найдена. Скопируйте из <DDS_INSTALL>/Analyzers."));
-        else if (!hasDlls)
-            issues.Add(new ManualIssue("Check7", ".sds/Libraries/Analyzers/",
-                "Директория Analyzers существует, но не содержит DLL."));
-    }
-
-    #endregion
 
     #region Fix Check3 — Reserved Enum Names
 
     private static async Task<List<ChangeRecord>> FixCheck3_ReservedEnumNames(
         List<(string Path, JsonDocument Doc)> entities,
-        string workDir,
         bool dryRun,
         CancellationToken ct)
     {
@@ -291,60 +87,8 @@ public class FixPackageTool
             var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
             var fileChanges = new List<(string PropName, string OldVal, string NewVal)>();
 
-            if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var prop in props.EnumerateArray())
-                {
-                    var typeName = prop.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-                    if (!typeName.Contains("EnumPropertyMetadata") && !typeName.Contains("EnumBlockPropertyMetadata"))
-                        continue;
-
-                    var propName = prop.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "?" : "?";
-
-                    if (prop.TryGetProperty("DirectValues", out var vals) && vals.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var val in vals.EnumerateArray())
-                        {
-                            if (!val.TryGetProperty("Name", out var nameEl)) continue;
-                            var valName = nameEl.GetString() ?? "";
-                            if (CSharpReservedWords.Contains(valName))
-                            {
-                                fileChanges.Add((propName, valName, valName + "Value"));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Also check Blocks OutProperties
-            if (root.TryGetProperty("Blocks", out var blocks) && blocks.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var block in blocks.EnumerateArray())
-                {
-                    if (block.TryGetProperty("OutProperties", out var outProps) && outProps.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var op in outProps.EnumerateArray())
-                        {
-                            var typeName = op.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-                            if (!typeName.Contains("Enum")) continue;
-                            var opName = op.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "?" : "?";
-
-                            if (op.TryGetProperty("DirectValues", out var vals) && vals.ValueKind == JsonValueKind.Array)
-                            {
-                                foreach (var val in vals.EnumerateArray())
-                                {
-                                    if (!val.TryGetProperty("Name", out var nameEl)) continue;
-                                    var valName = nameEl.GetString() ?? "";
-                                    if (CSharpReservedWords.Contains(valName))
-                                    {
-                                        fileChanges.Add((opName, valName, valName + "Value"));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            CollectReservedEnumChanges(root, "Properties", entityName, fileChanges);
+            CollectReservedEnumChangesFromBlocks(root, entityName, fileChanges);
 
             if (fileChanges.Count > 0)
             {
@@ -362,7 +106,7 @@ public class FixPackageTool
                             foreach (var dv in directValues)
                             {
                                 var name = dv?["Name"]?.GetValue<string>();
-                                if (name != null && CSharpReservedWords.Contains(name))
+                                if (name != null && PackageValidator.CSharpReservedWords.Contains(name))
                                 {
                                     dv!["Name"] = name + "Value";
                                 }
@@ -386,19 +130,72 @@ public class FixPackageTool
         return changes;
     }
 
+    private static void CollectReservedEnumChanges(JsonElement root, string arrayPropName,
+        string entityName, List<(string PropName, string OldVal, string NewVal)> fileChanges)
+    {
+        if (!root.TryGetProperty(arrayPropName, out var props) || props.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var prop in props.EnumerateArray())
+        {
+            var typeName = prop.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
+            if (!typeName.Contains("EnumPropertyMetadata") && !typeName.Contains("EnumBlockPropertyMetadata"))
+                continue;
+
+            var propName = prop.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "?" : "?";
+            CollectReservedValuesFromDirectValues(prop, propName, fileChanges);
+        }
+    }
+
+    private static void CollectReservedEnumChangesFromBlocks(JsonElement root,
+        string entityName, List<(string PropName, string OldVal, string NewVal)> fileChanges)
+    {
+        if (!root.TryGetProperty("Blocks", out var blocks) || blocks.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var block in blocks.EnumerateArray())
+        {
+            if (!block.TryGetProperty("OutProperties", out var outProps) || outProps.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var op in outProps.EnumerateArray())
+            {
+                var typeName = op.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
+                if (!typeName.Contains("Enum")) continue;
+                var opName = op.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "?" : "?";
+                CollectReservedValuesFromDirectValues(op, opName, fileChanges);
+            }
+        }
+    }
+
+    private static void CollectReservedValuesFromDirectValues(JsonElement prop, string propName,
+        List<(string PropName, string OldVal, string NewVal)> fileChanges)
+    {
+        if (!prop.TryGetProperty("DirectValues", out var vals) || vals.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var val in vals.EnumerateArray())
+        {
+            if (!val.TryGetProperty("Name", out var nameEl)) continue;
+            var valName = nameEl.GetString() ?? "";
+            if (PackageValidator.CSharpReservedWords.Contains(valName))
+            {
+                fileChanges.Add((propName, valName, valName + "Value"));
+            }
+        }
+    }
+
     #endregion
 
     #region Fix Check4 — Duplicate Codes
 
     private static async Task<List<ChangeRecord>> FixCheck4_DuplicateCodes(
         List<(string Path, JsonDocument Doc)> entities,
-        string workDir,
         bool dryRun,
         CancellationToken ct)
     {
         var changes = new List<ChangeRecord>();
 
-        // Group properties by BaseGuid to find siblings
         var codesByBase = new Dictionary<string, List<(string EntityName, string PropName, string Code, string FilePath)>>();
 
         foreach (var (path, doc) in entities)
@@ -425,7 +222,6 @@ public class FixPackageTool
             }
         }
 
-        // Find duplicates and generate fixes
         var fileFixes = new Dictionary<string, List<(string OldCode, string NewCode)>>();
 
         foreach (var (_, entries) in codesByBase)
@@ -439,7 +235,6 @@ public class FixPackageTool
                 var usedCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var item in group)
                 {
-                    // Generate prefix from entity name (first 2 uppercase letters)
                     var prefix = new string(item.EntityName
                         .Where(char.IsUpper)
                         .Take(2)
@@ -503,7 +298,6 @@ public class FixPackageTool
 
     private static async Task<List<ChangeRecord>> FixCheck5_Constraints(
         List<(string Path, JsonDocument Doc)> entities,
-        string workDir,
         bool dryRun,
         CancellationToken ct)
     {
@@ -514,7 +308,6 @@ public class FixPackageTool
             var root = doc.RootElement;
             var typeProp = root.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
 
-            // Only fix Assignment and Notice entities
             if (!typeProp.Contains("AssignmentMetadata") && !typeProp.Contains("NoticeMetadata"))
                 continue;
 
@@ -546,7 +339,6 @@ public class FixPackageTool
             if (hasNonEmptyConstraints && !dryRun)
             {
                 var jsonText = await File.ReadAllTextAsync(path, ct);
-                // Parse as JsonNode for modification
                 var jsonNode = JsonNode.Parse(jsonText);
                 if (jsonNode?["AttachmentGroups"] is JsonArray groupsArray)
                 {
@@ -577,14 +369,12 @@ public class FixPackageTool
     private static async Task<List<ChangeRecord>> FixCheck6_ResxKeys(
         string[] resxFiles,
         string[] mtdFiles,
-        string workDir,
         bool dryRun,
         CancellationToken ct)
     {
         var changes = new List<ChangeRecord>();
 
-        // Build property map from MTD files
-        var mtdPropertyMap = await BuildMtdPropertyMap(mtdFiles, ct);
+        var mtdPropertyMap = await PackageValidator.BuildMtdPropertyMap(mtdFiles, ct);
 
         foreach (var resxFile in resxFiles)
         {
@@ -593,7 +383,6 @@ public class FixPackageTool
             var dataElements = xdoc.Descendants("data").ToList();
             var modified = false;
 
-            // Determine entity name from resx file name
             var fileName = Path.GetFileNameWithoutExtension(resxFile);
             if (fileName.EndsWith(".ru", StringComparison.OrdinalIgnoreCase))
                 fileName = fileName[..^3];
@@ -607,12 +396,11 @@ public class FixPackageTool
             foreach (var data in dataElements)
             {
                 var keyName = data.Attribute("name")?.Value ?? "";
-                if (!ResourceGuidKeyPattern.IsMatch(keyName))
+                if (!PackageValidator.IsResourceGuidKey(keyName))
                     continue;
 
                 var value = data.Element("value")?.Value ?? "";
 
-                // Try to find matching property name
                 string? newKey = null;
                 if (propNames != null)
                 {
@@ -637,7 +425,6 @@ public class FixPackageTool
                 }
                 else
                 {
-                    // Could not auto-resolve — still record as a change with suggestion
                     changes.Add(new ChangeRecord("Check6",
                         Path.GetFileName(resxFile),
                         $"ключ `{keyName}` (значение: \"{value}\")",
@@ -652,51 +439,6 @@ public class FixPackageTool
         }
 
         return changes;
-    }
-
-    private static async Task<Dictionary<string, List<string>>> BuildMtdPropertyMap(
-        string[] mtdFiles, CancellationToken ct)
-    {
-        var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var mtdFile in mtdFiles)
-        {
-            try
-            {
-                var json = await File.ReadAllTextAsync(mtdFile, ct);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                // Skip module MTD
-                var typeProp = root.TryGetProperty("$type", out var tp) ? tp.GetString() ?? "" : "";
-                if (typeProp.Contains("ModuleMetadata")) continue;
-
-                var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
-                if (string.IsNullOrEmpty(entityName)) continue;
-
-                var propNames = new List<string>();
-                if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var prop in props.EnumerateArray())
-                    {
-                        if (prop.TryGetProperty("Name", out var pn))
-                        {
-                            var propName = pn.GetString();
-                            if (!string.IsNullOrEmpty(propName))
-                                propNames.Add(propName);
-                        }
-                    }
-                }
-
-                map[entityName] = propNames;
-            }
-            catch
-            {
-                // Skip unparseable files
-            }
-        }
-
-        return map;
     }
 
     #endregion
@@ -715,7 +457,6 @@ public class FixPackageTool
         sb.AppendLine($"# Результат исправления пакета {packageName}");
         sb.AppendLine();
 
-        // Auto-fixed section
         var autoFixableChanges = autoFixed.Where(c =>
             !c.After.Contains("не удалось определить автоматически")).ToList();
         var unresolvableChanges = autoFixed.Where(c =>
@@ -742,7 +483,6 @@ public class FixPackageTool
             sb.AppendLine();
         }
 
-        // Manual required section
         var allManual = manualRequired
             .Select(m => (m.CheckId, m.FileName, m.Description))
             .Concat(unresolvableChanges.Select(c => (c.CheckId, c.FileName, Description: $"{c.Before} -> {c.After}")))
@@ -769,7 +509,6 @@ public class FixPackageTool
             sb.AppendLine();
         }
 
-        // Summary
         sb.AppendLine("## Итого");
         sb.AppendLine($"- Исправлено автоматически: {autoFixableChanges.Count}");
         sb.AppendLine($"- Требует ручного исправления: {allManual.Count}");

@@ -82,7 +82,7 @@ public class SearchDocumentsTool
         }
         catch (Exception ex)
         {
-            return $"Ошибка при поиске документов: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось выполнить поиск документов. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 

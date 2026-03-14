@@ -87,6 +87,11 @@ public class RefactorEntityTool
         if (string.IsNullOrWhiteSpace(newName))
             return "**ОШИБКА**: Параметр `newName` обязателен для rename_property.";
 
+        if (!Regex.IsMatch(propertyName, @"^[A-Za-z][A-Za-z0-9_]*$"))
+            return "**ОШИБКА**: `propertyName` должен содержать только латинские буквы, цифры и подчёркивания, начинаться с буквы.";
+        if (!Regex.IsMatch(newName, @"^[A-Za-z][A-Za-z0-9_]*$"))
+            return "**ОШИБКА**: `newName` должен содержать только латинские буквы, цифры и подчёркивания, начинаться с буквы.";
+
         var mtdText = await File.ReadAllTextAsync(mtdPath);
         var root = JsonNode.Parse(mtdText, new JsonNodeOptions { PropertyNameCaseInsensitive = true });
         if (root == null)

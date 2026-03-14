@@ -49,11 +49,11 @@ public class ODataQueryTool
         }
         catch (HttpRequestException ex)
         {
-            return $"Не удалось подключиться к стенду. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось подключиться к стенду. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
         catch (Exception ex)
         {
-            return $"Ошибка при выполнении OData-запроса: {ex.Message}";
+            return $"**ОШИБКА**: Не удалось выполнить OData-запрос. Проверьте переменные окружения RX_ODATA_URL, RX_USERNAME, RX_PASSWORD. Детали: {ex.Message}";
         }
     }
 

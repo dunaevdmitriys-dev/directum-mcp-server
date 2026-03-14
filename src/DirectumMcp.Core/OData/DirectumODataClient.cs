@@ -31,6 +31,7 @@ public sealed class DirectumODataClient : IDisposable
         }
 
         _http = new HttpClient();
+        _http.Timeout = TimeSpan.FromSeconds(30);
         var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{config.Username}:{config.Password}"));
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", credentials);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
