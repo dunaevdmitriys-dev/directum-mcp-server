@@ -850,7 +850,14 @@ public static class PackageValidator
     public static async Task<Dictionary<string, List<string>>> BuildMtdPropertyMap(
         string[] mtdFiles, CancellationToken ct = default)
     {
+        return (await BuildMtdPropertyMapWithErrors(mtdFiles, ct)).Map;
+    }
+
+    public static async Task<(Dictionary<string, List<string>> Map, Helpers.ParseErrorCounter Errors)> BuildMtdPropertyMapWithErrors(
+        string[] mtdFiles, CancellationToken ct = default)
+    {
         var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var errors = new Helpers.ParseErrorCounter();
 
         foreach (var mtdFile in mtdFiles)
         {
@@ -882,13 +889,13 @@ public static class PackageValidator
 
                 map[entityName] = propNames;
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip unparseable files
+                errors.Record(mtdFile, ex.Message);
             }
         }
 
-        return map;
+        return (map, errors);
     }
 
     #endregion

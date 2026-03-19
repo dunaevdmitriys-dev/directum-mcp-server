@@ -29,9 +29,9 @@ public class AnalyzeSolutionTool
         if (!Directory.Exists(resolvedPath))
             return $"**ОШИБКА**: Директория не найдена: `{resolvedPath}`";
 
-        var (modules, entities) = await BuildSolutionModel(resolvedPath);
+        var (modules, entities, parseErrors) = await BuildSolutionModel(resolvedPath);
 
-        return action.ToLowerInvariant() switch
+        var result = action.ToLowerInvariant() switch
         {
             "conflicts" => RenderConflicts(modules, entities),
             "orphans" => RenderOrphans(modules, entities),
@@ -43,16 +43,22 @@ public class AnalyzeSolutionTool
             "trace" => await RenderTrace(modules, entities, resolvedPath, entity),
             _ => RenderHealth(resolvedPath, modules, entities)
         };
+
+        if (parseErrors > 0)
+            result += $"\n\n> **Ошибок парсинга**: {parseErrors} файлов пропущено\n";
+
+        return result;
     }
 
     internal record ModuleInfo(string Name, string Guid, string Path, List<string> DependencyGuids, List<string> EntityGuids, bool IsPlatform);
     internal record EntityInfo(string Name, string Guid, string BaseGuid, string? AncestorGuid, string ModuleGuid, string FilePath, List<PropertyInfo> Properties);
     internal record PropertyInfo(string Name, string Code, string Type);
 
-    internal static async Task<(List<ModuleInfo> Modules, List<EntityInfo> Entities)> BuildSolutionModel(string solutionPath)
+    internal static async Task<(List<ModuleInfo> Modules, List<EntityInfo> Entities, int ParseErrors)> BuildSolutionModel(string solutionPath)
     {
         var modules = new List<ModuleInfo>();
         var entities = new List<EntityInfo>();
+        int parseErrors = 0;
 
         var basePath = Path.GetFullPath(Path.Combine(solutionPath, "base"));
         var workPath = Path.GetFullPath(Path.Combine(solutionPath, "work"));
@@ -157,17 +163,17 @@ public class AnalyzeSolutionTool
                     }
                     catch
                     {
-                        // Skip unparseable entity files
+                        parseErrors++;
                     }
                 }
             }
             catch
             {
-                // Skip unparseable module files
+                parseErrors++;
             }
         }
 
-        return (modules, entities);
+        return (modules, entities, parseErrors);
     }
 
     internal static string RenderHealth(string solutionPath, List<ModuleInfo> modules, List<EntityInfo> entities)

@@ -46,11 +46,24 @@ public sealed class PackageWorkspace : IDisposable
             isDatFile = true;
 
             using var archive = ZipFile.OpenRead(packagePath);
+            var workDirNorm = Path.GetFullPath(workDir).TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
             foreach (var entry in archive.Entries)
             {
+                // Zip Slip protection: reject entries with traversal patterns
+                if (entry.FullName.Contains("..") ||
+                    entry.FullName.Contains('\0') ||
+                    Path.IsPathRooted(entry.FullName))
+                    throw new InvalidOperationException(
+                        $"Zip entry '{entry.FullName}' contains path traversal or absolute path — rejected.");
+
                 var destPath = Path.GetFullPath(Path.Combine(workDir, entry.FullName));
-                if (!destPath.StartsWith(Path.GetFullPath(workDir) + Path.DirectorySeparatorChar,
-                        StringComparison.OrdinalIgnoreCase))
+
+                // Double-check: normalized destination must be within workDir
+                if (!destPath.StartsWith(workDirNorm + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+                    !destPath.StartsWith(workDirNorm + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(destPath, workDirNorm, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException(
                         $"Zip entry '{entry.FullName}' would extract outside target directory.");
 

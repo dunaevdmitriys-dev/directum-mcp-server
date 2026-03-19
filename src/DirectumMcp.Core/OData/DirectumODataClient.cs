@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using DirectumMcp.Core.Helpers;
 using DirectumMcp.Core.Models;
 
 namespace DirectumMcp.Core.OData;
@@ -138,9 +139,14 @@ public sealed class DirectumODataClient : IDisposable
 
     /// <summary>
     /// Execute a raw GET request with a custom URL suffix.
+    /// Validates suffix to prevent URL injection.
     /// </summary>
     public async Task<JsonElement> GetRawAsync(string urlSuffix, CancellationToken ct = default)
     {
+        var (isValid, error) = ODataSanitizer.ValidateUrlSuffix(urlSuffix);
+        if (!isValid)
+            throw new ArgumentException($"Invalid URL suffix: {error}");
+
         var url = $"{_baseUrl}/{urlSuffix}";
         using var response = await _http.GetAsync(url, ct);
         response.EnsureSuccessStatusCode();
@@ -151,6 +157,11 @@ public sealed class DirectumODataClient : IDisposable
 
     private string BuildUrl(string entitySet, string? filter, string? select, string? orderby, int? top, int? skip, string? expand)
     {
+        // Validate all parameters before building URL
+        var validationError = ODataSanitizer.ValidateAll(entitySet, filter, select, orderby, expand);
+        if (validationError is not null)
+            throw new ArgumentException($"OData parameter validation failed: {validationError}");
+
         var url = $"{_baseUrl}/{entitySet}";
         var parts = new List<string>();
 
