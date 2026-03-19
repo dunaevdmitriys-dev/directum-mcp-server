@@ -21,6 +21,15 @@ public class ValidateResxTool
         "Form_",
         "Ribbon_",
         "FilterPanel_",
+        // Module-level cover keys (CoverGroup, CoverAction, CoverTab, CoverTitle)
+        "CoverGroup_",
+        "CoverAction_",
+        "CoverTab_",
+        "CoverFunction_",
+        // Module-level keys
+        "Widget_",
+        "Job_",
+        "AsyncHandler_",
     ];
 
     // Keys that are valid without any prefix
@@ -31,6 +40,7 @@ public class ValidateResxTool
         "AccusativeDisplayName",
         "AdditionalInfoTemplate",
         "Description",
+        "CoverTitle",
     };
 
     private static readonly Regex GuidPattern = new(

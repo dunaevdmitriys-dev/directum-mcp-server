@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using DirectumMcp.Core.Helpers;
 using ModelContextProtocol.Server;
@@ -11,10 +12,11 @@ namespace DirectumMcp.DevTools.Tools;
 public class AnalyzeSolutionTool
 {
     [McpServerTool(Name = "analyze_solution")]
-    [Description("Кросс-модульный анализ решения Directum RX. Действия: health — общий отчёт, conflicts — конфликты перекрытий, orphans — сироты, duplicates — дубликаты GUID/Code, versions — совместимость версий.")]
+    [Description("Кросс-модульный анализ решения Directum RX. Действия: health — общий отчёт, conflicts — конфликты перекрытий, orphans — сироты, duplicates — дубликаты GUID/Code, versions — совместимость версий, api — карта WebAPI endpoints, cover — карта обложки модуля, rc — проверка Remote Components, trace — cross-layer trace для сущности.")]
     public async Task<string> AnalyzeSolution(
         [Description("Путь к корню решения")] string? solutionPath = null,
-        [Description("Действие: health | conflicts | orphans | duplicates | versions")] string action = "health")
+        [Description("Действие: health | conflicts | orphans | duplicates | versions | api | cover | rc | trace")] string action = "health",
+        [Description("Имя сущности (для action=trace)")] string? entity = null)
     {
         var resolvedPath = solutionPath ?? Environment.GetEnvironmentVariable("SOLUTION_PATH");
 
@@ -35,6 +37,10 @@ public class AnalyzeSolutionTool
             "orphans" => RenderOrphans(modules, entities),
             "duplicates" => RenderDuplicates(modules, entities),
             "versions" => await RenderVersions(modules, resolvedPath),
+            "api" => await RenderApi(modules, resolvedPath),
+            "cover" => await RenderCover(modules, resolvedPath),
+            "rc" => await RenderRemoteComponents(modules, resolvedPath),
+            "trace" => await RenderTrace(modules, entities, resolvedPath, entity),
             _ => RenderHealth(resolvedPath, modules, entities)
         };
     }
@@ -542,6 +548,534 @@ public class AnalyzeSolutionTool
                 sb.AppendLine($"| {modA} | `{verA}` | {modB} | `{verB}` |");
         }
         sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    // ========== api action ==========
+
+    internal static async Task<string> RenderApi(List<ModuleInfo> modules, string solutionPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Карта WebAPI endpoints");
+        sb.AppendLine();
+
+        var webApiPattern = new Regex(
+            @"\[Public\(WebApiRequestType\.(?<method>\w+)\)\]\s*(?:(?:\[.*?\]\s*)*)(?:public\s+)?(?:virtual\s+)?(?:static\s+)?(?<return>\S+)\s+(?<name>\w+)\s*\((?<params>[^)]*)\)",
+            RegexOptions.Singleline);
+
+        var workPath = Path.GetFullPath(Path.Combine(solutionPath, "work"));
+        var workModules = modules.Where(m => !m.IsPlatform && m.Path.StartsWith(workPath, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var rows = new List<(string Module, string Function, string HttpMethod, string Parameters)>();
+
+        foreach (var module in workModules)
+        {
+            var serverFunctionsFiles = Directory.GetFiles(module.Path, "ModuleServerFunctions.cs", SearchOption.AllDirectories);
+            foreach (var file in serverFunctionsFiles)
+            {
+                try
+                {
+                    var content = await File.ReadAllTextAsync(file);
+                    var matches = webApiPattern.Matches(content);
+                    foreach (Match match in matches)
+                    {
+                        var httpMethod = match.Groups["method"].Value;
+                        var funcName = match.Groups["name"].Value;
+                        var rawParams = match.Groups["params"].Value.Trim();
+                        var paramList = string.IsNullOrWhiteSpace(rawParams) ? "—" : rawParams.Replace("|", "\\|");
+                        rows.Add((module.Name, funcName, httpMethod, paramList));
+                    }
+                }
+                catch
+                {
+                    // Skip unreadable files
+                }
+            }
+        }
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("WebAPI endpoints с атрибутом `[Public(WebApiRequestType.*)]` не найдены в work/ модулях.");
+        }
+        else
+        {
+            sb.AppendLine($"**Найдено endpoints: {rows.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Module | Function | HTTP Method | Parameters |");
+            sb.AppendLine("|--------|----------|-------------|------------|");
+            foreach (var (mod, func, method, pars) in rows)
+                sb.AppendLine($"| {mod} | `{func}` | {method} | {pars} |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    // ========== cover action ==========
+
+    internal static async Task<string> RenderCover(List<ModuleInfo> modules, string solutionPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Карта обложек модулей");
+        sb.AppendLine();
+
+        var workPath = Path.GetFullPath(Path.Combine(solutionPath, "work"));
+        var workModules = modules.Where(m => !m.IsPlatform && m.Path.StartsWith(workPath, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        foreach (var module in workModules)
+        {
+            var moduleMtdPath = Path.Combine(module.Path, "Module.mtd");
+            if (!File.Exists(moduleMtdPath))
+                continue;
+
+            try
+            {
+                var json = await File.ReadAllTextAsync(moduleMtdPath);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("Cover", out var coverEl) || coverEl.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                sb.AppendLine($"## {module.Name}");
+                sb.AppendLine();
+
+                // Collect client function names for validation
+                var clientFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var clientFuncFiles = Directory.GetFiles(module.Path, "ModuleClientFunctions.cs", SearchOption.AllDirectories);
+                foreach (var cf in clientFuncFiles)
+                {
+                    try
+                    {
+                        var cfContent = await File.ReadAllTextAsync(cf);
+                        var methodPattern = new Regex(@"(?:public|private|internal|protected)?\s*(?:virtual\s+)?(?:static\s+)?(?:partial\s+)?(?:void|Task|string|bool|int|IQueryable\S*|\S+)\s+(\w+)\s*\(");
+                        foreach (Match m in methodPattern.Matches(cfContent))
+                            clientFunctions.Add(m.Groups[1].Value);
+                    }
+                    catch { }
+                }
+
+                // Parse Tabs
+                if (coverEl.TryGetProperty("Tabs", out var tabsEl) && tabsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var tab in tabsEl.EnumerateArray())
+                    {
+                        var tabName = GetString(tab, "Name");
+                        sb.AppendLine($"### Tab: {(string.IsNullOrEmpty(tabName) ? "(без имени)" : tabName)}");
+                        sb.AppendLine();
+
+                        if (tab.TryGetProperty("Groups", out var groupsEl) && groupsEl.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var group in groupsEl.EnumerateArray())
+                            {
+                                var groupName = GetString(group, "Name");
+                                sb.AppendLine($"  **Group: {(string.IsNullOrEmpty(groupName) ? "(без имени)" : groupName)}**");
+                                sb.AppendLine();
+
+                                if (group.TryGetProperty("Actions", out var actionsEl) && actionsEl.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var action in actionsEl.EnumerateArray())
+                                    {
+                                        var actionType = GetString(action, "$type");
+                                        var actionName = GetString(action, "Name");
+                                        var shortType = actionType.Contains("CoverEntityListAction") ? "EntityList"
+                                            : actionType.Contains("CoverFunctionAction") ? "Function"
+                                            : actionType.Contains("CoverReportAction") ? "Report"
+                                            : actionType.Split('.').LastOrDefault()?.Replace("Metadata", "") ?? actionType;
+
+                                        var line = $"  - [{shortType}] **{actionName}**";
+
+                                        if (actionType.Contains("CoverFunctionAction"))
+                                        {
+                                            var funcName = GetString(action, "FunctionName");
+                                            if (!string.IsNullOrEmpty(funcName))
+                                            {
+                                                var exists = clientFunctions.Contains(funcName);
+                                                line += $" → `{funcName}()` {(exists ? "OK" : "**NOT FOUND in ModuleClientFunctions.cs**")}";
+                                            }
+                                        }
+
+                                        sb.AppendLine(line);
+                                    }
+                                }
+                                sb.AppendLine();
+                            }
+                        }
+                    }
+                }
+
+                // Remote controls on cover
+                if (coverEl.TryGetProperty("RemoteControls", out var rcEl) && rcEl.ValueKind == JsonValueKind.Array)
+                {
+                    sb.AppendLine("**Remote Controls on Cover:**");
+                    sb.AppendLine();
+                    foreach (var rc in rcEl.EnumerateArray())
+                    {
+                        var rcName = GetString(rc, "Name");
+                        var scope = GetString(rc, "Scope");
+                        var moduleName = GetString(rc, "Module");
+                        sb.AppendLine($"  - {rcName} (Scope: {scope}, Module: {moduleName})");
+                    }
+                    sb.AppendLine();
+                }
+            }
+            catch
+            {
+                sb.AppendLine($"## {module.Name}");
+                sb.AppendLine();
+                sb.AppendLine("*Ошибка чтения Module.mtd*");
+                sb.AppendLine();
+            }
+        }
+
+        if (workModules.Count == 0)
+            sb.AppendLine("Кастомных модулей в work/ не найдено.");
+
+        return sb.ToString();
+    }
+
+    // ========== rc action ==========
+
+    internal static async Task<string> RenderRemoteComponents(List<ModuleInfo> modules, string solutionPath)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Проверка Remote Components");
+        sb.AppendLine();
+
+        var workPath = Path.GetFullPath(Path.Combine(solutionPath, "work"));
+        var workModules = modules.Where(m => !m.IsPlatform && m.Path.StartsWith(workPath, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var rows = new List<(string Module, string Component, string Loader, string Scope, string WebpackExpose, string Status)>();
+
+        foreach (var module in workModules)
+        {
+            var moduleMtdPath = Path.Combine(module.Path, "Module.mtd");
+            if (!File.Exists(moduleMtdPath))
+                continue;
+
+            try
+            {
+                var json = await File.ReadAllTextAsync(moduleMtdPath);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                // Extract RemoteComponents → Controls and Loaders
+                if (!root.TryGetProperty("RemoteComponents", out var rcRoot) || rcRoot.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                var controls = new List<(string Name, string Loader, string Scope)>();
+
+                if (rcRoot.TryGetProperty("Controls", out var controlsEl) && controlsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var ctrl in controlsEl.EnumerateArray())
+                    {
+                        var name = GetString(ctrl, "Name");
+                        var loader = GetString(ctrl, "Loader");
+                        var scope = GetString(ctrl, "Scope");
+                        if (!string.IsNullOrEmpty(name))
+                            controls.Add((name, loader, scope));
+                    }
+                }
+
+                if (rcRoot.TryGetProperty("Loaders", out var loadersEl) && loadersEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var ldr in loadersEl.EnumerateArray())
+                    {
+                        var name = GetString(ldr, "Name");
+                        var loader = GetString(ldr, "Loader");
+                        var scope = GetString(ldr, "Scope");
+                        if (!string.IsNullOrEmpty(name))
+                            controls.Add((name, loader, scope));
+                    }
+                }
+
+                if (controls.Count == 0)
+                    continue;
+
+                // Find webpack.config.js exposes
+                var webpackExposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var webpackFiles = Directory.GetFiles(module.Path, "webpack.config.js", SearchOption.AllDirectories);
+                foreach (var wpFile in webpackFiles)
+                {
+                    try
+                    {
+                        var wpContent = await File.ReadAllTextAsync(wpFile);
+                        // Match patterns like './ComponentName': './src/...'  or  "./ComponentName": "./src/..."
+                        var exposePattern = new Regex(@"['""]\.\/(?<key>[^'""]+)['""]\s*:\s*['""](?<value>[^'""]+)['""]");
+                        foreach (Match m in exposePattern.Matches(wpContent))
+                            webpackExposes.TryAdd(m.Groups["key"].Value, m.Groups["value"].Value);
+                    }
+                    catch { }
+                }
+
+                // Find deployed remoteEntry.js
+                var remoteEntryFiles = Directory.GetFiles(module.Path, "remoteEntry.js", SearchOption.AllDirectories);
+                var deployedExposes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var reFile in remoteEntryFiles)
+                {
+                    try
+                    {
+                        var reContent = await File.ReadAllTextAsync(reFile);
+                        // In compiled remoteEntry.js, exposed keys appear in var patterns
+                        var exposeKeyPattern = new Regex(@"['""]\.\/(?<key>[^'""]+)['""]");
+                        foreach (Match m in exposeKeyPattern.Matches(reContent))
+                            deployedExposes.Add(m.Groups["key"].Value);
+                    }
+                    catch { }
+                }
+
+                foreach (var (name, loader, scope) in controls)
+                {
+                    var wpExpose = webpackExposes.TryGetValue(name, out var val) ? val : "—";
+                    var status = "?";
+                    if (webpackExposes.ContainsKey(name))
+                        status = deployedExposes.Contains(name) ? "OK" : "webpack OK, deploy NOT FOUND";
+                    else
+                        status = "NOT in webpack.config.js";
+
+                    rows.Add((module.Name, name, loader, scope, wpExpose, status));
+                }
+            }
+            catch { }
+        }
+
+        if (rows.Count == 0)
+        {
+            sb.AppendLine("Remote Components не найдены в work/ модулях.");
+        }
+        else
+        {
+            sb.AppendLine($"**Найдено компонентов: {rows.Count}**");
+            sb.AppendLine();
+            sb.AppendLine("| Module | Component | Loader | Scope | webpack expose | Status |");
+            sb.AppendLine("|--------|-----------|--------|-------|----------------|--------|");
+            foreach (var (mod, comp, loader, scope, wpExpose, status) in rows)
+                sb.AppendLine($"| {mod} | `{comp}` | {loader} | {scope} | {wpExpose} | {status} |");
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    // ========== trace action ==========
+
+    private static readonly Dictionary<string, string> DbTypeMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["StringPropertyMetadata"] = "citext",
+        ["IntegerPropertyMetadata"] = "int8",
+        ["DoublePropertyMetadata"] = "float8",
+        ["BooleanPropertyMetadata"] = "bool",
+        ["DateTimePropertyMetadata"] = "timestamp",
+        ["NavigationPropertyMetadata"] = "int8 (FK)",
+        ["EnumPropertyMetadata"] = "citext",
+        ["TextPropertyMetadata"] = "citext",
+    };
+
+    internal static async Task<string> RenderTrace(List<ModuleInfo> modules, List<EntityInfo> entities, string solutionPath, string? entityName)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Cross-layer trace");
+        sb.AppendLine();
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            sb.AppendLine("**ОШИБКА**: Укажите параметр `entity` с именем сущности (например: `entity=Deal`).");
+            return sb.ToString();
+        }
+
+        var targetEntities = entities
+            .Where(e => e.Name.Equals(entityName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (targetEntities.Count == 0)
+        {
+            sb.AppendLine($"Сущность `{entityName}` не найдена в решении.");
+            return sb.ToString();
+        }
+
+        var moduleByGuid = modules.ToDictionary(m => m.Guid, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in targetEntities)
+        {
+            var moduleName = moduleByGuid.TryGetValue(entity.ModuleGuid, out var mod) ? mod.Name : entity.ModuleGuid;
+            var moduleDir = mod?.Path ?? "";
+
+            sb.AppendLine($"## {entity.Name} (модуль: {moduleName})");
+            sb.AppendLine();
+
+            // MTD info
+            sb.AppendLine("### MTD");
+            sb.AppendLine();
+            sb.AppendLine($"- **Name:** {entity.Name}");
+            sb.AppendLine($"- **NameGuid:** `{entity.Guid}`");
+            sb.AppendLine($"- **BaseGuid:** `{entity.BaseGuid}`");
+            if (!string.IsNullOrEmpty(entity.AncestorGuid))
+                sb.AppendLine($"- **AncestorGuid:** `{entity.AncestorGuid}`");
+
+            // HandledEvents from MTD
+            var handledEvents = new List<string>();
+            try
+            {
+                var mtdJson = await File.ReadAllTextAsync(entity.FilePath);
+                using var mtdDoc = JsonDocument.Parse(mtdJson);
+                var mtdRoot = mtdDoc.RootElement;
+
+                if (mtdRoot.TryGetProperty("HandledEvents", out var eventsEl) && eventsEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var ev in eventsEl.EnumerateArray())
+                    {
+                        var evName = ev.ValueKind == JsonValueKind.String ? ev.GetString() : GetString(ev, "Name");
+                        if (!string.IsNullOrEmpty(evName))
+                            handledEvents.Add(evName);
+                    }
+                }
+            }
+            catch { }
+
+            if (handledEvents.Count > 0)
+            {
+                sb.AppendLine($"- **HandledEvents:** {string.Join(", ", handledEvents)}");
+            }
+            sb.AppendLine();
+
+            // Properties → DB mapping
+            sb.AppendLine("### Properties → DB Columns");
+            sb.AppendLine();
+            sb.AppendLine("| Property | Code | MTD Type | DB Column | DB Type |");
+            sb.AppendLine("|----------|------|----------|-----------|---------|");
+
+            // Derive table name: Sungero_<ModuleShortName>_<EntityName> (convention)
+            var tablePrefix = moduleName.Contains('.') ? moduleName.Split('.').Last() : moduleName;
+
+            foreach (var prop in entity.Properties)
+            {
+                var shortType = prop.Type.Split('.').LastOrDefault() ?? prop.Type;
+                var dbColumn = prop.Code;
+                var dbType = DbTypeMap.TryGetValue(shortType, out var dt) ? dt : "?";
+                sb.AppendLine($"| {prop.Name} | {prop.Code} | {shortType} | `{dbColumn}` | {dbType} |");
+            }
+            sb.AppendLine();
+            sb.AppendLine($"*Предполагаемая таблица:* `Sungero_{tablePrefix}_{entity.Name}`");
+            sb.AppendLine();
+
+            // Resx: DisplayName, property labels
+            sb.AppendLine("### Resx Labels");
+            sb.AppendLine();
+
+            var entityDir = Path.GetDirectoryName(entity.FilePath)!;
+            var resxFiles = Directory.Exists(entityDir)
+                ? Directory.GetFiles(entityDir, "*System.ru.resx", SearchOption.TopDirectoryOnly)
+                    .Concat(Directory.GetFiles(entityDir, "*System.resx", SearchOption.TopDirectoryOnly))
+                    .ToArray()
+                : Array.Empty<string>();
+
+            var resxLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var resxFile in resxFiles)
+            {
+                try
+                {
+                    var resxXml = await File.ReadAllTextAsync(resxFile);
+                    var xdoc = XDocument.Parse(resxXml);
+                    foreach (var dataEl in xdoc.Root?.Elements("data") ?? Enumerable.Empty<XElement>())
+                    {
+                        var name = dataEl.Attribute("name")?.Value;
+                        var value = dataEl.Element("value")?.Value;
+                        if (!string.IsNullOrEmpty(name) && value != null)
+                            resxLabels.TryAdd(name, value);
+                    }
+                }
+                catch { }
+            }
+
+            if (resxLabels.Count > 0)
+            {
+                if (resxLabels.TryGetValue("DisplayName", out var displayName))
+                    sb.AppendLine($"- **DisplayName:** {displayName}");
+
+                sb.AppendLine();
+                sb.AppendLine("| Property | Resx Key | Label |");
+                sb.AppendLine("|----------|----------|-------|");
+                foreach (var prop in entity.Properties)
+                {
+                    var key = $"Property_{prop.Name}";
+                    var label = resxLabels.TryGetValue(key, out var lbl) ? lbl : "—";
+                    sb.AppendLine($"| {prop.Name} | `{key}` | {label} |");
+                }
+                sb.AppendLine();
+            }
+            else
+            {
+                sb.AppendLine("*System.resx файлы не найдены или пусты.*");
+                sb.AppendLine();
+            }
+
+            // API: grep entity name in ServerFunctions.cs
+            sb.AppendLine("### API References");
+            sb.AppendLine();
+
+            if (!string.IsNullOrEmpty(moduleDir))
+            {
+                var serverFuncFiles = Directory.GetFiles(moduleDir, "*ServerFunctions.cs", SearchOption.AllDirectories);
+                var apiRefs = new List<(string File, int Line, string Text)>();
+
+                var entityPattern = new Regex($@"\b{Regex.Escape(entity.Name)}\b");
+
+                foreach (var sfFile in serverFuncFiles)
+                {
+                    try
+                    {
+                        var lines = await File.ReadAllLinesAsync(sfFile);
+                        for (var i = 0; i < lines.Length; i++)
+                        {
+                            if (entityPattern.IsMatch(lines[i]))
+                            {
+                                var relPath = Path.GetRelativePath(solutionPath, sfFile);
+                                apiRefs.Add((relPath, i + 1, lines[i].Trim()));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (apiRefs.Count > 0)
+                {
+                    sb.AppendLine($"Найдено {apiRefs.Count} упоминаний в ServerFunctions:");
+                    sb.AppendLine();
+                    foreach (var (file, line, text) in apiRefs.Take(20))
+                        sb.AppendLine($"- `{file}:{line}` — `{text}`");
+
+                    if (apiRefs.Count > 20)
+                        sb.AppendLine($"- ... и ещё {apiRefs.Count - 20}");
+                }
+                else
+                {
+                    sb.AppendLine($"Упоминания `{entity.Name}` в ServerFunctions.cs не найдены.");
+                }
+            }
+            else
+            {
+                sb.AppendLine("*Директория модуля не определена.*");
+            }
+            sb.AppendLine();
+
+            // Full trace summary
+            sb.AppendLine("### Полная трасса (Property → DB → Resx → Events)");
+            sb.AppendLine();
+            sb.AppendLine("| Property | DB Column | DB Type | Resx Label | Handled Events |");
+            sb.AppendLine("|----------|-----------|---------|------------|----------------|");
+
+            var eventsStr = handledEvents.Count > 0 ? string.Join(", ", handledEvents) : "—";
+            foreach (var prop in entity.Properties)
+            {
+                var shortType = prop.Type.Split('.').LastOrDefault() ?? prop.Type;
+                var dbType = DbTypeMap.TryGetValue(shortType, out var dt2) ? dt2 : "?";
+                var resxKey = $"Property_{prop.Name}";
+                var label = resxLabels.TryGetValue(resxKey, out var lbl2) ? lbl2 : "—";
+                sb.AppendLine($"| {prop.Name} | `{prop.Code}` | {dbType} | {label} | {eventsStr} |");
+            }
+            sb.AppendLine();
+        }
 
         return sb.ToString();
     }
