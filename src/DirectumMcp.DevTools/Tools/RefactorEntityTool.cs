@@ -42,7 +42,7 @@ public class RefactorEntityTool
     };
 
     [McpServerTool(Name = "refactor_entity")]
-    [Description("Интеллектуальный рефакторинг сущностей Directum RX — каскадное обновление MTD + resx + C#. Действия: rename_property, add_property, remove_property, change_base_type, extract_to_databook.")]
+    [Description("Каскадный рефакторинг: переименование, добавление, удаление свойств в MTD+resx+C#.")]
     public async Task<string> RefactorEntity(
         [Description("Путь к директории сущности (с .mtd файлом)")] string path,
         [Description("Действие: rename_property | add_property | remove_property | change_base_type | extract_to_databook")] string action,

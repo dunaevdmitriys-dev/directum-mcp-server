@@ -6,7 +6,7 @@ using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
 
-[McpServerToolType]
+// [McpServerToolType] // Hidden: redundant with Claude Code native capabilities
 public class DeployToStandTool
 {
     [McpServerTool(Name = "deploy_to_stand")]

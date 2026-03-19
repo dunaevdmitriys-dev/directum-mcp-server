@@ -11,7 +11,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class CheckCodeConsistencyTool
 {
     [McpServerTool(Name = "check_code_consistency")]
-    [Description("Проверка согласованности между MTD-метаданными и C#-кодом в пакете Directum RX: функции, классы, пространства имён, инициализатор модуля.")]
+    [Description("Проверить согласованность MTD ↔ C#: функции, классы, namespace, инициализатор.")]
     public async Task<string> CheckCodeConsistency(
         [Description("Путь к директории пакета Directum RX")] string packagePath)
     {
@@ -55,8 +55,8 @@ public class CheckCodeConsistencyTool
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var metaType = GetString(root, "$type");
-                var entityName = GetString(root, "Name");
+                var metaType = root.GetStringProp("$type");
+                var entityName = root.GetStringProp("Name");
 
                 if (metaType.Contains("ModuleMetadata"))
                 {
@@ -211,17 +211,17 @@ public class CheckCodeConsistencyTool
 
         foreach (var action in actions.EnumerateArray())
         {
-            var actionType = GetString(action, "$type");
+            var actionType = action.GetStringProp("$type");
             if (!actionType.Contains("CoverFunctionActionMetadata"))
                 continue;
 
-            var functionName = GetString(action, "FunctionName");
+            var functionName = action.GetStringProp("FunctionName");
             if (string.IsNullOrEmpty(functionName))
                 continue;
 
             if (!ContainsMethodName(clientContent, functionName))
             {
-                var actionName = GetString(action, "Name");
+                var actionName = action.GetStringProp("Name");
                 issues.Add(new ConsistencyIssue(
                     "ClientFunctions",
                     moduleName,
@@ -320,10 +320,10 @@ public class CheckCodeConsistencyTool
         {
             foreach (var item in section.EnumerateArray())
             {
-                var itemType = GetString(item, "$type");
+                var itemType = item.GetStringProp("$type");
                 if (itemType.Contains("FunctionMetadata"))
                 {
-                    var name = GetString(item, "Name");
+                    var name = item.GetStringProp("Name");
                     if (!string.IsNullOrEmpty(name))
                         names.Add(name);
                 }
@@ -350,13 +350,6 @@ public class CheckCodeConsistencyTool
         if (string.IsNullOrEmpty(content))
             return false;
         return Regex.IsMatch(content, @"\b" + Regex.Escape(methodName) + @"\s*\(");
-    }
-
-    private static string GetString(JsonElement el, string propertyName)
-    {
-        return el.TryGetProperty(propertyName, out var val) && val.ValueKind == JsonValueKind.String
-            ? val.GetString() ?? ""
-            : "";
     }
 
     private record ConsistencyIssue(string CheckName, string EntityName, string Description);

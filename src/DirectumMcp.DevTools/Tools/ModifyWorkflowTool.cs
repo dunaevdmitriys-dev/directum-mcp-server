@@ -11,7 +11,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class ModifyWorkflowTool
 {
     [McpServerTool(Name = "modify_workflow")]
-    [Description("Модификация маршрутных схем (RouteScheme) задач Directum RX. Действия: add_block — вставить блок, remove_block — удалить блок, add_parallel — параллельная ветка, reorder — переместить блок.")]
+    [Description("Изменить RouteScheme задачи: добавить/удалить блок, параллельная ветка.")]
     public async Task<string> ModifyWorkflow(
         [Description("Путь к .mtd файлу задачи")] string path,
         [Description("Действие: add_block | remove_block | add_parallel | reorder")] string action,

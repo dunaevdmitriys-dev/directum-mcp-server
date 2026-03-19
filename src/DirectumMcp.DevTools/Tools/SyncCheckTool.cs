@@ -11,7 +11,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class SyncCheckTool
 {
     [McpServerTool(Name = "sync_check")]
-    [Description("Сравнивает локальную папку с исходниками разработчика и опубликованный модуль на стенде (AppliedModules). Находит расхождения в .mtd и .resx файлах. Чисто файловый инструмент, не использует OData.")]
+    [Description("Сравнить локальные исходники с опубликованным модулем на стенде.")]
     public async Task<string> SyncCheck(
         [Description("Путь к папке с исходниками разработчика")] string sourcePath,
         [Description("Путь к папке с опубликованным модулем на стенде (обычно в AppliedModules)")] string publishedPath)

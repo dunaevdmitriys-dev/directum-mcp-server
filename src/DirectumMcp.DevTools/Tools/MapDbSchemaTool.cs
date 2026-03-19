@@ -23,7 +23,7 @@ public class MapDbSchemaTool
     };
 
     [McpServerTool(Name = "map_db_schema")]
-    [Description("Маппит MTD метаданные сущности в имена таблиц и колонок PostgreSQL: таблица, колонки, типы, FK, справочный CREATE TABLE.")]
+    [Description("MTD → имена таблиц и колонок PostgreSQL + CREATE TABLE.")]
     public async Task<string> Execute(
         [Description("Путь к директории модуля (например work/DirRX.CRMSales)")] string? modulePath = null,
         [Description("Имя сущности (например Deal)")] string? entityName = null,

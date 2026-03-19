@@ -15,9 +15,7 @@ public class CheckPermissionsTool
     };
 
     [McpServerTool(Name = "check_permissions")]
-    [Description("Валидация прав доступа (AccessRights) в .mtd файлах сущностей Directum RX. " +
-                 "Проверяет: пустые AccessRights, дублирующиеся права, неизвестные типы прав, " +
-                 "ссылки на несуществующие роли из Module.mtd.")]
+    [Description("Проверить AccessRights в MTD: пустые права, дубликаты, неизвестные роли.")]
     public async Task<string> CheckPermissions(
         [Description("Путь к директории пакета Directum RX или к конкретному .mtd файлу")] string path)
     {

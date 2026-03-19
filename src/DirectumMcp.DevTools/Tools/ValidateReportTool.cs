@@ -20,9 +20,7 @@ public class ValidateReportTool
     ];
 
     [McpServerTool(Name = "validate_report")]
-    [Description("Валидация отчётов Directum RX: проверка связки FastReport-шаблона (.frx) " +
-                 "и файла запросов (Queries.xml). Проверяет совпадение датасетов, " +
-                 "хардкоженные строки подключения, неиспользуемые запросы и пустые шаблоны.")]
+    [Description("Валидация отчёта: .frx ↔ Queries.xml, датасеты, подключения.")]
     public async Task<string> ValidateReport(string path)
     {
         if (!PathGuard.IsAllowed(path))

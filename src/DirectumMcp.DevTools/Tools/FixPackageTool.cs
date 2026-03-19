@@ -14,7 +14,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class FixPackageTool
 {
     [McpServerTool(Name = "fix_package")]
-    [Description("Автоисправление ошибок .dat пакета Directum RX (resx-ключи, дубли Code, enum, Constraints). dryRun=true по умолчанию.")]
+    [Description("Автоисправление .dat: resx-ключи, дубли Code, enum, Constraints. dryRun по умолчанию.")]
     public async Task<string> Fix(
         [Description("Путь к .dat файлу или директории с распакованным пакетом")]
         string packagePath,

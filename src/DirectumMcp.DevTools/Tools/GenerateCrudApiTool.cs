@@ -47,7 +47,7 @@ public class GenerateCrudApiTool
     };
 
     [McpServerTool(Name = "generate_crud_api")]
-    [Description("Генерирует C# код CRUD endpoints (GET/POST/PATCH/DELETE) для standalone .NET API на основе MTD метаданных сущности. Поддерживает два стиля: 'odata' (по умолчанию, через ODataService) и 'sql' (прямые SQL-запросы).")]
+    [Description("Сгенерировать C# CRUD endpoints (OData/SQL) из MTD сущности.")]
     public async Task<string> Execute(
         [Description("Путь к .mtd файлу сущности")] string entityMtdPath,
         [Description("Стиль генерации: 'odata' (по умолчанию, через ODataService) или 'sql' (прямые SQL-запросы)")] string? style = "odata")

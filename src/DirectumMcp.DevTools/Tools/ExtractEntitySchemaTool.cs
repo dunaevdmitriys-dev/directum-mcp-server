@@ -19,7 +19,7 @@ public class ExtractEntitySchemaTool
     };
 
     [McpServerTool(Name = "extract_entity_schema")]
-    [Description("Извлекает компактную семантическую схему сущности из .mtd файла: свойства с типами, обязательные поля, перечисления, навигационные свойства, коллекции, действия и группы вложений.")]
+    [Description("Компактная схема сущности из MTD: свойства, типы, enum, навигация, действия.")]
     public async Task<string> ExtractEntitySchema(
         [Description("Путь к .mtd файлу сущности")] string path,
         [Description("Формат вывода: 'markdown' (по умолчанию) или 'json-schema'")] string? format = "markdown",

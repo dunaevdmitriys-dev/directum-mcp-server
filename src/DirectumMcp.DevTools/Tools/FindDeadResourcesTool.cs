@@ -20,8 +20,7 @@ public class FindDeadResourcesTool
     };
 
     [McpServerTool(Name = "find_dead_resources")]
-    [Description("Поиск «мёртвых» ресурсов в модуле Directum RX: ключи System.resx без соответствующего свойства/действия в MTD, " +
-                 "свойства и действия MTD без перевода в System.resx, а также ResourcesKeys в MTD без ключей в Entity.resx.")]
+    [Description("Найти мёртвые ресурсы: ключи resx без MTD и MTD без resx.")]
     public async Task<string> FindDeadResources(
         [Description("Путь к директории модуля")] string modulePath)
     {

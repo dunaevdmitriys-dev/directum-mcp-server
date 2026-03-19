@@ -7,18 +7,9 @@ using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
 
-[McpServerToolType]
+// [McpServerToolType] // Hidden: redundant with Claude Code native capabilities
 public class InspectTool
 {
-    private static readonly Dictionary<string, string> KnownBaseGuids = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["04581d26-0780-4cfd-b3cd-c2cafc5798b0"] = "DatabookEntry (справочник)",
-        ["58cca102-1e97-4f07-b6ac-fd866a8b7cb1"] = "Document (документ)",
-        ["d795d1f6-45c1-4e5e-9677-b53fb7280c7e"] = "Task (задача)",
-        ["91cbfdc8-5d5d-465e-95a4-3a987e1a0c24"] = "Assignment (задание)",
-        ["4e09273f-8b3a-489e-814e-a4ebfbba3e6c"] = "Notice (уведомление)",
-    };
-
     [McpServerTool(Name = "inspect")]
     [Description("Универсальный инструмент чтения метаданных Directum RX — MTD сущности, MTD модуля, resx, директория модуля")]
     public async Task<string> Inspect(
@@ -49,7 +40,7 @@ public class InspectTool
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        var metaType = GetString(root, "$type");
+        var metaType = root.GetStringProp("$type");
         var sb = new StringBuilder();
 
         if (metaType.Contains("ModuleMetadata"))
@@ -64,13 +55,13 @@ public class InspectTool
 
     private static void FormatEntity(JsonElement root, StringBuilder sb)
     {
-        var name = GetString(root, "Name");
-        var nameGuid = GetString(root, "NameGuid");
-        var baseGuid = GetString(root, "BaseGuid");
-        var metaType = GetString(root, "$type");
+        var name = root.GetStringProp("Name");
+        var nameGuid = root.GetStringProp("NameGuid");
+        var baseGuid = root.GetStringProp("BaseGuid");
+        var metaType = root.GetStringProp("$type");
         var isAbstract = root.TryGetProperty("IsAbstract", out var abs) && abs.ValueKind == JsonValueKind.True;
-        var version = GetString(root, "Version");
-        var integrationName = GetString(root, "IntegrationServiceName");
+        var version = root.GetStringProp("Version");
+        var integrationName = root.GetStringProp("IntegrationServiceName");
 
         var entityKind = metaType switch
         {
@@ -107,9 +98,9 @@ public class InspectTool
 
                 foreach (var prop in propList)
                 {
-                    var propType = GetString(prop, "$type");
-                    var propName = GetString(prop, "Name");
-                    var propCode = GetString(prop, "Code");
+                    var propType = prop.GetStringProp("$type");
+                    var propName = prop.GetStringProp("Name");
+                    var propCode = prop.GetStringProp("Code");
                     var isRequired = prop.TryGetProperty("IsRequired", out var req) && req.ValueKind == JsonValueKind.True;
                     var isAncestor = prop.TryGetProperty("IsAncestorMetadata", out var anc) && anc.ValueKind == JsonValueKind.True;
 
@@ -124,7 +115,7 @@ public class InspectTool
                     if (prop.TryGetProperty("DirectValues", out var vals) && vals.ValueKind == JsonValueKind.Array)
                     {
                         var valNames = vals.EnumerateArray()
-                            .Select(v => GetString(v, "Name"))
+                            .Select(v => v.GetStringProp("Name"))
                             .Where(v => !string.IsNullOrEmpty(v));
                         extras.Add($"values: [{string.Join(", ", valNames)}]");
                     }
@@ -147,7 +138,7 @@ public class InspectTool
                 sb.AppendLine("|----------|-----------|");
                 foreach (var action in actionList)
                 {
-                    var actionName = GetString(action, "Name");
+                    var actionName = action.GetStringProp("Name");
                     var isAncestor = action.TryGetProperty("IsAncestorMetadata", out var anc) && anc.ValueKind == JsonValueKind.True;
                     sb.AppendLine($"| {actionName} | {(isAncestor ? "да" : "нет")} |");
                 }
@@ -165,8 +156,8 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var form in formList)
                 {
-                    var formName = GetString(form, "Name");
-                    var formType = GetString(form, "$type");
+                    var formName = form.GetStringProp("Name");
+                    var formType = form.GetStringProp("$type");
                     var shortFormType = formType.Split(',')[0].Split('.').LastOrDefault() ?? formType;
                     sb.Append($"- `{formName}` ({shortFormType})");
                     if (form.TryGetProperty("Controls", out var controls) && controls.ValueKind == JsonValueKind.Array)
@@ -207,14 +198,14 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var group in groupList)
                 {
-                    var groupName = GetString(group, "Name");
+                    var groupName = group.GetStringProp("Name");
                     sb.Append($"- `{groupName}`");
                     if (group.TryGetProperty("Constraints", out var constraints) && constraints.ValueKind == JsonValueKind.Array)
                     {
                         var cList = constraints.EnumerateArray().ToList();
                         if (cList.Count > 0)
                         {
-                            var cNames = cList.Select(c => GetString(c, "Name")).Where(n => !string.IsNullOrEmpty(n));
+                            var cNames = cList.Select(c => c.GetStringProp("Name")).Where(n => !string.IsNullOrEmpty(n));
                             sb.Append($" — ограничения: [{string.Join(", ", cNames)}]");
                         }
                     }
@@ -234,13 +225,13 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var func in funcList)
                 {
-                    var funcName = GetString(func, "Name");
-                    var returnType = GetString(func, "ReturnType").Replace("global::", "");
+                    var funcName = func.GetStringProp("Name");
+                    var returnType = func.GetStringProp("ReturnType").Replace("global::", "");
                     var paramStr = "";
                     if (func.TryGetProperty("Parameters", out var pars) && pars.ValueKind == JsonValueKind.Array)
                     {
                         var parList = pars.EnumerateArray()
-                            .Select(p => $"{GetString(p, "ParameterType").Replace("global::", "")} {GetString(p, "Name")}");
+                            .Select(p => $"{p.GetStringProp("ParameterType").Replace("global::", "")} {p.GetStringProp("Name")}");
                         paramStr = string.Join(", ", parList);
                     }
                     sb.AppendLine($"- `{returnType} {funcName}({paramStr})`");
@@ -259,8 +250,8 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var block in blockList)
                 {
-                    var blockName = GetString(block, "Name");
-                    var blockType = GetString(block, "$type");
+                    var blockName = block.GetStringProp("Name");
+                    var blockType = block.GetStringProp("$type");
                     var shortBlockType = blockType.Split(',')[0].Split('.').LastOrDefault() ?? blockType;
                     sb.AppendLine($"- `{blockName}` ({shortBlockType})");
                 }
@@ -271,9 +262,9 @@ public class InspectTool
 
     private static void FormatModule(JsonElement root, StringBuilder sb)
     {
-        var name = GetString(root, "Name");
-        var nameGuid = GetString(root, "NameGuid");
-        var version = GetString(root, "Version");
+        var name = root.GetStringProp("Name");
+        var nameGuid = root.GetStringProp("NameGuid");
+        var version = root.GetStringProp("Version");
 
         sb.AppendLine($"## Модуль: {name}");
         sb.AppendLine();
@@ -296,7 +287,7 @@ public class InspectTool
                 sb.AppendLine("|------|");
                 foreach (var dep in depList)
                 {
-                    var id = GetString(dep, "Id");
+                    var id = dep.GetStringProp("Id");
                     sb.AppendLine($"| `{id}` |");
                 }
                 sb.AppendLine();
@@ -315,8 +306,8 @@ public class InspectTool
                 sb.AppendLine("|-----|----------|");
                 foreach (var j in jobList)
                 {
-                    var jName = GetString(j, "Name");
-                    var jDesc = GetString(j, "Description");
+                    var jName = j.GetStringProp("Name");
+                    var jDesc = j.GetStringProp("Description");
                     sb.AppendLine($"| {jName} | {jDesc} |");
                 }
                 sb.AppendLine();
@@ -335,12 +326,12 @@ public class InspectTool
                 sb.AppendLine("|---------|-----------|");
                 foreach (var h in handlerList)
                 {
-                    var hName = GetString(h, "Name");
+                    var hName = h.GetStringProp("Name");
                     var paramNames = new List<string>();
                     if (h.TryGetProperty("Parameters", out var pars) && pars.ValueKind == JsonValueKind.Array)
                     {
                         paramNames = pars.EnumerateArray()
-                            .Select(p => GetString(p, "Name"))
+                            .Select(p => p.GetStringProp("Name"))
                             .Where(n => !string.IsNullOrEmpty(n))
                             .ToList();
                     }
@@ -362,16 +353,16 @@ public class InspectTool
                     sb.AppendLine();
                     foreach (var g in groupList)
                     {
-                        var gName = GetString(g, "Name");
+                        var gName = g.GetStringProp("Name");
                         sb.AppendLine($"#### Группа: {gName}");
                         if (g.TryGetProperty("Actions", out var cActions) && cActions.ValueKind == JsonValueKind.Array)
                         {
                             foreach (var a in cActions.EnumerateArray())
                             {
-                                var aName = GetString(a, "Name");
-                                var aType = GetString(a, "$type");
+                                var aName = a.GetStringProp("Name");
+                                var aType = a.GetStringProp("$type");
                                 var shortType = aType.Split(',')[0].Split('.').LastOrDefault() ?? aType;
-                                var funcName = GetString(a, "FunctionName");
+                                var funcName = a.GetStringProp("FunctionName");
                                 var funcSuffix = string.IsNullOrEmpty(funcName) ? "" : $" (FunctionName: {funcName})";
                                 sb.AppendLine($"  - `{aName}` [{shortType}]{funcSuffix}");
                             }
@@ -392,7 +383,7 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var s in structList)
                 {
-                    var sName = GetString(s, "Name");
+                    var sName = s.GetStringProp("Name");
                     sb.AppendLine($"- `{sName}`");
                 }
                 sb.AppendLine();
@@ -409,8 +400,8 @@ public class InspectTool
                 sb.AppendLine();
                 foreach (var func in funcList)
                 {
-                    var funcName = GetString(func, "Name");
-                    var returnType = GetString(func, "ReturnType").Replace("global::", "");
+                    var funcName = func.GetStringProp("Name");
+                    var returnType = func.GetStringProp("ReturnType").Replace("global::", "");
                     sb.AppendLine($"- `{returnType} {funcName}(...)`");
                 }
                 sb.AppendLine();
@@ -542,7 +533,7 @@ public class InspectTool
                     depSb.AppendLine();
                     foreach (var dep in depList)
                     {
-                        var id = GetString(dep, "Id");
+                        var id = dep.GetStringProp("Id");
                         depSb.AppendLine($"- `{id}`");
                     }
                     depSb.AppendLine();
@@ -566,12 +557,12 @@ public class InspectTool
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var metaType = GetString(root, "$type");
+                var metaType = root.GetStringProp("$type");
                 if (metaType.Contains("ModuleMetadata"))
                     continue;
 
-                var eName = GetString(root, "Name");
-                var baseGuid = GetString(root, "BaseGuid");
+                var eName = root.GetStringProp("Name");
+                var baseGuid = root.GetStringProp("BaseGuid");
 
                 var kind = metaType switch
                 {
@@ -579,7 +570,7 @@ public class InspectTool
                     var t when t.Contains("AssignmentMetadata") => "Assignment",
                     var t when t.Contains("NoticeMetadata") => "Notice",
                     var t when t.Contains("ReportMetadata") => "Report",
-                    _ => ResolveEntityKindShort(baseGuid)
+                    _ => DirectumConstants.ResolveBaseType(baseGuid) is "Unknown" ? "Entity" : DirectumConstants.ResolveBaseType(baseGuid)
                 };
 
                 var propCount = 0;
@@ -636,13 +627,6 @@ public class InspectTool
         return Directory.GetFiles(dir, "*.cs", SearchOption.AllDirectories).Length;
     }
 
-    private static string GetString(JsonElement el, string propertyName)
-    {
-        return el.TryGetProperty(propertyName, out var val) && val.ValueKind == JsonValueKind.String
-            ? val.GetString() ?? ""
-            : "";
-    }
-
     private static string ExtractPropertyType(string fullType)
     {
         var className = fullType.Split(',')[0].Split('.').LastOrDefault() ?? fullType;
@@ -653,19 +637,7 @@ public class InspectTool
 
     private static string ResolveEntityKindFromBase(string baseGuid)
     {
-        return KnownBaseGuids.TryGetValue(baseGuid, out var kind) ? kind : "Entity";
-    }
-
-    private static string ResolveEntityKindShort(string baseGuid)
-    {
-        return baseGuid.ToLowerInvariant() switch
-        {
-            "04581d26-0780-4cfd-b3cd-c2cafc5798b0" => "DatabookEntry",
-            "58cca102-1e97-4f07-b6ac-fd866a8b7cb1" => "Document",
-            "d795d1f6-45c1-4e5e-9677-b53fb7280c7e" => "Task",
-            "91cbfdc8-5d5d-465e-95a4-3a987e1a0c24" => "Assignment",
-            "4e09273f-8b3a-489e-814e-a4ebfbba3e6c" => "Notice",
-            _ => "Entity"
-        };
+        var resolved = DirectumConstants.ResolveBaseType(baseGuid);
+        return resolved == "Unknown" ? "Entity" : resolved;
     }
 }

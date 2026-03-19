@@ -9,7 +9,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class ScaffoldJobTool
 {
     [McpServerTool(Name = "scaffold_job")]
-    [Description("Генерация фонового задания (Background Job) Directum RX: Module.mtd с JobMetadata, ModuleJobs.cs с обработчиком, ресурсные файлы.")]
+    [Description("Создать Background Job: MTD + обработчик + resx.")]
     public async Task<string> ScaffoldJob(
         [Description("Путь к директории модуля")] string outputPath,
         [Description("Имя задания в PascalCase")] string jobName,

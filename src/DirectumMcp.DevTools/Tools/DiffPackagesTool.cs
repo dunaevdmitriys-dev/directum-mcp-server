@@ -12,7 +12,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class DiffPackagesTool
 {
     [McpServerTool(Name = "diff_packages")]
-    [Description("Сравнение двух пакетов Directum RX (директорий или .dat-файлов): различия в метаданных, ресурсах и коде.")]
+    [Description("Сравнить два .dat пакета: изменения в MTD, resx, коде.")]
     public async Task<string> DiffPackages(
         [Description("Путь к первому пакету (директория или .dat-файл)")] string pathA,
         [Description("Путь к второму пакету (директория или .dat-файл)")] string pathB,

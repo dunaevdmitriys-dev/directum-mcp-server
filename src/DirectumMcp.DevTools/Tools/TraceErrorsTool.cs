@@ -10,7 +10,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class TraceErrorsTool
 {
     [McpServerTool(Name = "trace_errors")]
-    [Description("Читает и фильтрует лог-файлы Directum RX (логи сборки DDS, логи runtime-сервисов), возвращает последние ошибки с контекстом.")]
+    [Description("Читать логи DDS/runtime, фильтр по уровню/ключевому слову/времени.")]
     public async Task<string> TraceErrors(
         [Description("Путь к директории с лог-файлами")] string logsPath,
         [Description("Фильтр по уровню: \"error\", \"warning\", \"all\" (по умолчанию \"error\")")] string level = "error",

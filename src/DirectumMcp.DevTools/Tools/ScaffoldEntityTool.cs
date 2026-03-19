@@ -9,14 +9,7 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class ScaffoldEntityTool
 {
-    private static readonly Dictionary<string, string> BaseGuids = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["DatabookEntry"] = "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
-        ["Document"] = "58cca102-1e97-4f07-b6ac-fd866a8b7cb1",
-        ["Task"] = "d795d1f6-45c1-4e5e-9677-b53fb7280c7e",
-        ["Assignment"] = "91cbfdc8-5d5d-465e-95a4-3a987e1a0c24",
-        ["Notice"] = "4e09273f-8b3a-489e-814e-a4ebfbba3e6c"
-    };
+    private static Dictionary<string, string> BaseGuids => DirectumConstants.BaseTypeToGuid;
 
     private static readonly Dictionary<string, string> PropertyTypeMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,8 +22,20 @@ public class ScaffoldEntityTool
         ["navigation"] = "Sungero.Metadata.NavigationPropertyMetadata"
     };
 
+    private static readonly Dictionary<string, string> DataBinderMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["string"] = "Sungero.Presentation.CommonDataBinders.StringEditorToStringBinder",
+        ["text"] = "Sungero.Presentation.CommonDataBinders.StringEditorToStringBinder",
+        ["int"] = "Sungero.Presentation.CommonDataBinders.NumericEditorToIntBinder",
+        ["double"] = "Sungero.Presentation.CommonDataBinders.NumericEditorToIntBinder",
+        ["bool"] = "Sungero.Presentation.CommonDataBinders.BooleanEditorToBooleanBinder",
+        ["date"] = "Sungero.Presentation.CommonDataBinders.DateTimeEditorToDateTimeBinder",
+        ["navigation"] = "Sungero.Presentation.CommonDataBinders.DropDownEditorToNavigationBinder",
+        ["enum"] = "Sungero.Presentation.CommonDataBinders.DropDownEditorToEnumBinder"
+    };
+
     [McpServerTool(Name = "scaffold_entity")]
-    [Description("Генерация скелета новой сущности Directum RX или override существующей: MTD-метаданные, resx-ресурсы, серверные/клиентские функции.")]
+    [Description("Создать скелет сущности: MTD + resx + C# стабы. Режимы: new, override.")]
     public async Task<string> ScaffoldEntity(
         [Description("Путь к директории, где будут созданы файлы сущности")] string outputPath,
         [Description("Имя сущности в PascalCase (например 'ContractDocument')")] string entityName,
@@ -38,7 +43,8 @@ public class ScaffoldEntityTool
         [Description("Базовый тип: DatabookEntry, Document, Task, Assignment, Notice")] string baseType = "DatabookEntry",
         [Description("Режим: 'new' — создание с нуля, 'override' — переопределение существующей сущности")] string mode = "new",
         [Description("Свойства через запятую: 'Name:string,Amount:int,Status:enum(Active|Closed),Counterparty:navigation'")] string properties = "",
-        [Description("GUID переопределяемой сущности (только для mode=override)")] string ancestorGuid = "")
+        [Description("GUID переопределяемой сущности (только для mode=override)")] string ancestorGuid = "",
+        [Description("Русское название сущности для ru.resx (необязательно, по умолчанию '[RU] EntityName')")] string russianName = "")
     {
         if (string.IsNullOrWhiteSpace(outputPath))
             return "**ОШИБКА**: Параметр `outputPath` не может быть пустым.";
@@ -81,12 +87,12 @@ public class ScaffoldEntityTool
         createdFiles.Add($"{entityName}.mtd");
 
         // 2. System.resx (neutral)
-        var resxContent = GenerateSystemResx(entityName, parsedProperties, isRussian: false);
+        var resxContent = GenerateSystemResx(entityName, parsedProperties, isRussian: false, russianName: "");
         await WriteFileAsync(outputPath, $"{entityName}System.resx", resxContent);
         createdFiles.Add($"{entityName}System.resx");
 
         // 3. System.ru.resx
-        var resxRuContent = GenerateSystemResx(entityName, parsedProperties, isRussian: true);
+        var resxRuContent = GenerateSystemResx(entityName, parsedProperties, isRussian: true, russianName: russianName);
         await WriteFileAsync(outputPath, $"{entityName}System.ru.resx", resxRuContent);
         createdFiles.Add($"{entityName}System.ru.resx");
 
@@ -171,7 +177,10 @@ public class ScaffoldEntityTool
         sb.AppendLine($"  \"$type\": \"{metadataType}, Sungero.Metadata\",");
         sb.AppendLine($"  \"NameGuid\": \"{entityGuid}\",");
         sb.AppendLine($"  \"Name\": \"{entityName}\",");
+        sb.AppendLine($"  \"Code\": \"{entityName}\",");
         sb.AppendLine($"  \"BaseGuid\": \"{baseGuid}\",");
+        sb.AppendLine("  \"CanBeUsedInIntegration\": true,");
+        sb.AppendLine("  \"CanBeNavigationPropertyType\": true,");
 
         if (mode == "override" && !string.IsNullOrWhiteSpace(ancestorGuid))
         {
@@ -180,6 +189,32 @@ public class ScaffoldEntityTool
 
         sb.AppendLine($"  \"ModuleName\": \"{moduleName}\",");
         sb.AppendLine("  \"Actions\": [],");
+
+        // CreationAreaMetadata
+        var creationAreaGuid = Guid.NewGuid().ToString("D");
+        sb.AppendLine("  \"CreationAreaMetadata\": {");
+        sb.AppendLine($"    \"NameGuid\": \"{creationAreaGuid}\",");
+        sb.AppendLine("    \"Name\": \"CreationArea\",");
+        sb.AppendLine("    \"Buttons\": [],");
+        sb.AppendLine("    \"Versions\": []");
+        sb.AppendLine("  },");
+
+        // FilterPanel
+        var filterPanelGuid = Guid.NewGuid().ToString("D");
+        sb.AppendLine("  \"FilterPanel\": {");
+        sb.AppendLine($"    \"NameGuid\": \"{filterPanelGuid}\",");
+        sb.AppendLine("    \"Name\": \"FilterPanel\",");
+        sb.AppendLine("    \"Controls\": [],");
+        sb.AppendLine("    \"Versions\": []");
+        sb.AppendLine("  },");
+
+        // Forms (for DatabookEntry and Document)
+        if (baseType is "DatabookEntry" or "Document")
+        {
+            GenerateFormsSection(sb, properties);
+        }
+
+        // Properties
         sb.AppendLine("  \"Properties\": [");
 
         for (int i = 0; i < properties.Count; i++)
@@ -200,6 +235,76 @@ public class ScaffoldEntityTool
         return sb.ToString();
     }
 
+    private static void GenerateFormsSection(StringBuilder sb, List<PropertyDef> properties)
+    {
+        var formGuid = Guid.NewGuid().ToString("D");
+        var controlGroupGuid = Guid.NewGuid().ToString("D");
+
+        sb.AppendLine("  \"Forms\": [");
+        sb.AppendLine("    {");
+        sb.AppendLine("      \"$type\": \"Sungero.Metadata.StandaloneFormMetadata, Sungero.Metadata\",");
+        sb.AppendLine($"      \"NameGuid\": \"{formGuid}\",");
+        sb.AppendLine("      \"Name\": \"Card\",");
+        sb.AppendLine("      \"Controls\": [");
+
+        // Main control group
+        sb.AppendLine("        {");
+        sb.AppendLine("          \"$type\": \"Sungero.Metadata.ControlGroupMetadata, Sungero.Metadata\",");
+        sb.AppendLine($"          \"NameGuid\": \"{controlGroupGuid}\",");
+        sb.AppendLine("          \"Name\": \"Main\",");
+        sb.AppendLine("          \"ColumnDefinitions\": [");
+        sb.AppendLine("            {");
+        sb.AppendLine("              \"Percentage\": 100.0");
+        sb.AppendLine("            }");
+        sb.AppendLine("          ],");
+        sb.AppendLine("          \"Controls\": [");
+
+        // One ControlMetadata per property
+        for (int i = 0; i < properties.Count; i++)
+        {
+            var prop = properties[i];
+            var controlGuid = Guid.NewGuid().ToString("D");
+            var dataBinder = GetDataBinder(prop.RawType);
+            var isLast = i == properties.Count - 1;
+            var comma = isLast ? "" : ",";
+
+            sb.AppendLine("            {");
+            sb.AppendLine("              \"$type\": \"Sungero.Metadata.ControlMetadata, Sungero.Metadata\",");
+            sb.AppendLine($"              \"NameGuid\": \"{controlGuid}\",");
+            sb.AppendLine($"              \"Name\": \"{prop.Name}\",");
+            sb.AppendLine("              \"ColumnNumber\": 0,");
+            sb.AppendLine("              \"ColumnSpan\": 1,");
+            sb.AppendLine($"              \"DataBinderTypeName\": \"{dataBinder}\",");
+            sb.AppendLine($"              \"ParentGuid\": \"{controlGroupGuid}\",");
+            sb.AppendLine($"              \"PropertyGuid\": \"{prop.Guid}\",");
+            sb.AppendLine($"              \"RowNumber\": {i},");
+            sb.AppendLine("              \"RowSpan\": 1");
+            sb.AppendLine($"            }}{comma}");
+        }
+
+        sb.AppendLine("          ],");
+        sb.AppendLine("          \"Versions\": []");
+        sb.AppendLine("        }");
+
+        sb.AppendLine("      ],");
+        sb.AppendLine("      \"Versions\": []");
+        sb.AppendLine("    }");
+        sb.AppendLine("  ],");
+    }
+
+    private static string GetDataBinder(string rawType)
+    {
+        // Handle enum(Value1|Value2) syntax
+        if (rawType.StartsWith("enum", StringComparison.OrdinalIgnoreCase))
+            return DataBinderMap["enum"];
+
+        if (DataBinderMap.TryGetValue(rawType, out var binder))
+            return binder;
+
+        // Default to string binder
+        return DataBinderMap["string"];
+    }
+
     private static string GeneratePropertyJson(PropertyDef prop, string mode)
     {
         var sb = new StringBuilder();
@@ -207,6 +312,7 @@ public class ScaffoldEntityTool
         sb.AppendLine($"      \"$type\": \"{prop.MetadataType}, Sungero.Metadata\",");
         sb.AppendLine($"      \"NameGuid\": \"{prop.Guid}\",");
         sb.AppendLine($"      \"Name\": \"{prop.Name}\",");
+        sb.AppendLine($"      \"Code\": \"{prop.Name}\",");
 
         if (mode == "override")
         {
@@ -239,7 +345,7 @@ public class ScaffoldEntityTool
 
     #region Resx Generation
 
-    private static string GenerateSystemResx(string entityName, List<PropertyDef> properties, bool isRussian)
+    private static string GenerateSystemResx(string entityName, List<PropertyDef> properties, bool isRussian, string russianName)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
@@ -284,14 +390,26 @@ public class ScaffoldEntityTool
         sb.AppendLine("    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>");
         sb.AppendLine("  </resheader>");
 
-        var displayValue = isRussian ? entityName : entityName;
+        // DisplayName
+        var displayValue = isRussian
+            ? (!string.IsNullOrWhiteSpace(russianName) ? russianName : $"[RU] {entityName}")
+            : entityName;
         sb.AppendLine($"  <data name=\"DisplayName\" xml:space=\"preserve\">");
         sb.AppendLine($"    <value>{displayValue}</value>");
         sb.AppendLine("  </data>");
 
+        // CollectionDisplayName
+        var collectionDisplayValue = isRussian
+            ? (!string.IsNullOrWhiteSpace(russianName) ? russianName : $"[RU] {entityName}")
+            : entityName;
+        sb.AppendLine($"  <data name=\"CollectionDisplayName\" xml:space=\"preserve\">");
+        sb.AppendLine($"    <value>{collectionDisplayValue}</value>");
+        sb.AppendLine("  </data>");
+
+        // Property labels
         foreach (var prop in properties)
         {
-            var propValue = isRussian ? prop.Name : prop.Name;
+            var propValue = isRussian ? $"[TODO] {prop.Name}" : prop.Name;
             sb.AppendLine($"  <data name=\"Property_{prop.Name}\" xml:space=\"preserve\">");
             sb.AppendLine($"    <value>{propValue}</value>");
             sb.AppendLine("  </data>");

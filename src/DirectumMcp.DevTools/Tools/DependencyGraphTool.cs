@@ -10,7 +10,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class DependencyGraphTool
 {
     [McpServerTool(Name = "dependency_graph")]
-    [Description("Строит и анализирует граф зависимостей модулей решения Directum RX. Действия: graph — полная карта зависимостей, cycles — поиск циклических зависимостей, impact — анализ влияния модуля на остальные.")]
+    [Description("Граф зависимостей модулей: визуализация, циклы, impact-анализ.")]
     public async Task<string> DependencyGraph(
         [Description("Путь к корню решения. Если не указан — используется переменная окружения SOLUTION_PATH")] string? solutionPath = null,
         [Description("Действие: graph | cycles | impact (по умолчанию: graph)")] string action = "graph",

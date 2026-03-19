@@ -9,10 +9,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class ValidatePackageTool
 {
     [McpServerTool(Name = "check_package")]
-    [Description("Валидация .dat пакета Directum RX перед импортом в DDS. " +
-                 "Проверяет 7 типичных проблем: CollectionProperty в DatabookEntry, " +
-                 "кросс-модульные ссылки, зарезервированные слова C#, дублирование Code, " +
-                 "согласованность AttachmentGroup, формат ключей System.resx, наличие Analyzers.")]
+    [Description("Валидация .dat перед импортом в DDS: 8 проверок (коллекции, ссылки, enum, Code, resx, Analyzers, GUID-согласованность).")]
     public async Task<string> Validate(string packagePath)
     {
         if (!PathGuard.IsAllowed(packagePath))

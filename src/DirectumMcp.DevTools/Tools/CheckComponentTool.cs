@@ -23,7 +23,7 @@ public class CheckComponentTool
     };
 
     [McpServerTool(Name = "check_component")]
-    [Description("Валидация проекта Remote Component (стороннего контрола) Directum RX: структура, manifest, loaders, зависимости, билд, i18n.")]
+    [Description("Валидация Remote Component: manifest, webpack, loaders, i18n.")]
     public async Task<string> CheckComponent(
         [Description("Путь к корневой директории Remote Component проекта (содержит package.json и webpack.config.js)")] string componentPath)
     {

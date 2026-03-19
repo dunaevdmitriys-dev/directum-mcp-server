@@ -7,7 +7,7 @@ using ModelContextProtocol.Server;
 
 namespace DirectumMcp.DevTools.Tools;
 
-[McpServerToolType]
+// [McpServerToolType] // Hidden: redundant with Claude Code native capabilities
 public class ScaffoldSpaTool
 {
     private static readonly Dictionary<string, string> MtdTypeToTs = new(StringComparer.OrdinalIgnoreCase)

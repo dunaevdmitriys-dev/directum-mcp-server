@@ -12,7 +12,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class ValidateDeployTool
 {
     [McpServerTool(Name = "validate_deploy")]
-    [Description("Проверка стенда после публикации: satellite DLL, RC, WebAPI, БД таблицы, начальные данные, cover actions, формат resx")]
+    [Description("Проверка стенда после публикации: satellite DLL, RC, WebAPI, resx.")]
     public async Task<string> Execute(
         [Description("Путь к DirectumLauncher")] string launcherPath,
         [Description("Путь к git-репозиторию с исходниками")] string repoPath,

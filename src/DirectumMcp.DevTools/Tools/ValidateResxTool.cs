@@ -52,8 +52,7 @@ public class ValidateResxTool
         RegexOptions.Compiled);
 
     [McpServerTool(Name = "check_resx")]
-    [Description("Проверка формата ключей System.resx файлов Directum RX. " +
-                 "Обнаруживает ключи Resource_<GUID> (неверный формат) и предлагает правильные имена на основе MTD.")]
+    [Description("Найти неверные ключи System.resx (Resource_GUID вместо Property_Name).")]
     public async Task<string> ValidateResx(string directoryPath)
     {
         if (!PathGuard.IsAllowed(directoryPath))

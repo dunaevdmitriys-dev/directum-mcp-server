@@ -9,24 +9,6 @@ namespace DirectumMcp.DevTools.Tools;
 [McpServerToolType]
 public class SearchMetadataTool
 {
-    private static readonly Dictionary<string, string> FilterTypeGuids = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["DatabookEntry"] = "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
-        ["Document"]      = "58cca102-1e97-4f07-b6ac-fd866a8b7cb1",
-        ["Task"]          = "d795d1f6-45c1-4e5e-9677-b53fb7280c7e",
-        ["Assignment"]    = "91cbfdc8-5d5d-465e-95a4-3a987e1a0c24",
-        ["Notice"]        = "4e09273f-8b3a-489e-814e-a4ebfbba3e6c",
-    };
-
-    private static readonly Dictionary<string, string> KnownBaseGuids = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["04581d26-0780-4cfd-b3cd-c2cafc5798b0"] = "DatabookEntry",
-        ["58cca102-1e97-4f07-b6ac-fd866a8b7cb1"] = "Document",
-        ["d795d1f6-45c1-4e5e-9677-b53fb7280c7e"] = "Task",
-        ["91cbfdc8-5d5d-465e-95a4-3a987e1a0c24"] = "Assignment",
-        ["4e09273f-8b3a-489e-814e-a4ebfbba3e6c"] = "Notice",
-    };
-
     private const int MaxResults = 50;
 
     [McpServerTool(Name = "search_metadata")]
@@ -52,7 +34,7 @@ public class SearchMetadataTool
         string? filterBaseGuid = null;
         if (!string.IsNullOrEmpty(filterType))
         {
-            if (!FilterTypeGuids.TryGetValue(filterType, out filterBaseGuid) &&
+            if (!DirectumConstants.BaseTypeToGuid.TryGetValue(filterType, out filterBaseGuid) &&
                 !string.Equals(filterType, "Report", StringComparison.OrdinalIgnoreCase))
                 return $"**ОШИБКА**: Неизвестный filterType `{filterType}`. Допустимые: DatabookEntry, Document, Task, Assignment, Notice, Report.";
         }
@@ -74,7 +56,7 @@ public class SearchMetadataTool
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var metaType = GetString(root, "$type");
+                var metaType = root.GetStringProp("$type");
                 bool isModule = metaType.Contains("ModuleMetadata");
 
                 if (normalizedScope == "entities" && isModule) continue;
@@ -126,10 +108,10 @@ public class SearchMetadataTool
         var q = query.ToLowerInvariant();
         var relativePath = Path.GetRelativePath(solutionPath, filePath);
 
-        var name = GetString(root, "Name");
-        var nameGuid = GetString(root, "NameGuid");
-        var baseGuid = GetString(root, "BaseGuid");
-        var metaType = GetString(root, "$type");
+        var name = root.GetStringProp("Name");
+        var nameGuid = root.GetStringProp("NameGuid");
+        var baseGuid = root.GetStringProp("BaseGuid");
+        var metaType = root.GetStringProp("$type");
 
         string kind;
         if (isModule)
@@ -144,7 +126,7 @@ public class SearchMetadataTool
                 var t when t.Contains("AssignmentMetadata") => "Assignment",
                 var t when t.Contains("NoticeMetadata")     => "Notice",
                 var t when t.Contains("ReportMetadata")     => "Report",
-                _ => KnownBaseGuids.TryGetValue(baseGuid, out var k) ? k : "Entity"
+                _ => DirectumConstants.KnownBaseGuids.TryGetValue(baseGuid, out var k) ? k : "Entity"
             };
         }
 
@@ -178,9 +160,9 @@ public class SearchMetadataTool
         {
             foreach (var prop in props.EnumerateArray())
             {
-                var propName = GetString(prop, "Name");
-                var entityGuid = GetString(prop, "EntityGuid");
-                var propCode = GetString(prop, "Code");
+                var propName = prop.GetStringProp("Name");
+                var entityGuid = prop.GetStringProp("EntityGuid");
+                var propCode = prop.GetStringProp("Code");
 
                 if (propName.Contains(q, StringComparison.OrdinalIgnoreCase))
                     AddResult($"Property.Name: {propName}");
@@ -198,20 +180,13 @@ public class SearchMetadataTool
         {
             foreach (var action in actions.EnumerateArray())
             {
-                var actionName = GetString(action, "Name");
+                var actionName = action.GetStringProp("Name");
                 if (actionName.Contains(q, StringComparison.OrdinalIgnoreCase))
                     AddResult($"Action.Name: {actionName}");
             }
         }
 
         return results;
-    }
-
-    private static string GetString(JsonElement el, string propertyName)
-    {
-        return el.TryGetProperty(propertyName, out var val) && val.ValueKind == JsonValueKind.String
-            ? val.GetString() ?? ""
-            : "";
     }
 
     private record SearchResult(string Name, string Kind, string MatchedField, string RelativePath);

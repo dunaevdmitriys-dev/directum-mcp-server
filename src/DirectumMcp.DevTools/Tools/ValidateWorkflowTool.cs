@@ -11,12 +11,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class ValidateWorkflowTool
 {
     [McpServerTool(Name = "validate_workflow")]
-    [Description("Валидация маршрутных схем (RouteScheme) в .mtd файлах задач Directum RX. " +
-                 "Проверяет: мёртвые блоки (недостижимые из StartBlock), переходы без условий в ConditionBlock, " +
-                 "обработчики без кода (GenerateHandler:true без метода в *RouteHandlers.cs), " +
-                 "пустые блоки без исходящих переходов (тупики). " +
-                 "Принимает путь к файлу .mtd или директории (рекурсивный поиск). " +
-                 "Параметр severity: all | error | warning.")]
+    [Description("Валидация RouteScheme: мёртвые блоки, тупики, переходы без условий.")]
     public async Task<string> ValidateWorkflow(
         [Description("Путь к .mtd файлу задачи или директории с .mtd файлами")] string path,
         [Description("Фильтр серьёзности: all | error | warning (по умолчанию: all)")] string? severity = "all")

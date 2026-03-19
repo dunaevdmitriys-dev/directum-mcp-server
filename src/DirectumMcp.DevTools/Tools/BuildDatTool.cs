@@ -10,7 +10,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class BuildDatTool
 {
     [McpServerTool(Name = "build_dat")]
-    [Description("Собирает .dat пакет из директории пакета Directum RX. .dat файл — это ZIP-архив, содержащий папки source/, settings/ и файл PackageInfo.xml.")]
+    [Description("Собрать .dat пакет из директории. Используй после scaffold/fix/sync.")]
     public async Task<string> BuildDat(
         [Description("Путь к директории пакета (должна содержать source/ и/или settings/)")]
         string packagePath,

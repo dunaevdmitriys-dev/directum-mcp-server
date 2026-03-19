@@ -31,7 +31,7 @@ public record CheckResult(string Name, bool Passed, List<string> Issues, string 
 
 /// <summary>
 /// Static validator for Directum RX .dat packages (unpacked directory).
-/// Runs 7 checks against MTD and System.resx files.
+/// Runs 8 checks against MTD and System.resx files.
 /// </summary>
 public static class PackageValidator
 {
@@ -60,7 +60,7 @@ public static class PackageValidator
         RegexOptions.Compiled);
 
     /// <summary>
-    /// Runs all 7 checks on an unpacked package directory.
+    /// Runs all 8 checks on an unpacked package directory.
     /// Returns a list of ValidationResult for each found issue.
     /// </summary>
     public static async Task<List<ValidationResult>> RunAllChecks(string workDir)
@@ -91,6 +91,7 @@ public static class PackageValidator
         results.AddRange(Check5_AttachmentGroupConsistency(entities));
         results.AddRange(await Check6_ResxKeyFormat(resxFiles));
         results.AddRange(Check7_AnalyzersDirectory(workDir));
+        results.AddRange(Check8_GuidConsistency(entities));
 
         // Dispose documents
         foreach (var (_, doc) in entities) doc.Dispose();
@@ -100,7 +101,7 @@ public static class PackageValidator
     }
 
     /// <summary>
-    /// Runs all 7 checks and returns legacy CheckResult list for backward-compatible report formatting.
+    /// Runs all 8 checks and returns legacy CheckResult list for backward-compatible report formatting.
     /// </summary>
     public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(string workDir)
     {
@@ -130,6 +131,7 @@ public static class PackageValidator
         results.Add(Check5_AttachmentGroupConsistencyLegacy(entities));
         results.Add(await Check6_ResxKeyFormatLegacy(resxFiles));
         results.Add(Check7_AnalyzersDirectoryLegacy(workDir));
+        results.Add(Check8_GuidConsistencyLegacy(entities));
 
         // Dispose documents
         foreach (var (_, doc) in entities) doc.Dispose();
@@ -139,7 +141,7 @@ public static class PackageValidator
     }
 
     /// <summary>
-    /// Runs all 7 checks using a pre-opened PackageWorkspace.
+    /// Runs all 8 checks using a pre-opened PackageWorkspace.
     /// Documents are NOT disposed — the workspace owns them.
     /// </summary>
     public static async Task<List<ValidationResult>> RunAllChecks(PackageWorkspace ws)
@@ -153,12 +155,13 @@ public static class PackageValidator
         results.AddRange(Check5_AttachmentGroupConsistency(ws.Entities));
         results.AddRange(await Check6_ResxKeyFormat(ws.ResxFiles));
         results.AddRange(Check7_AnalyzersDirectory(ws.WorkDir));
+        results.AddRange(Check8_GuidConsistency(ws.Entities));
 
         return results;
     }
 
     /// <summary>
-    /// Runs all 7 checks using a pre-opened PackageWorkspace, returning legacy CheckResult format.
+    /// Runs all 8 checks using a pre-opened PackageWorkspace, returning legacy CheckResult format.
     /// Documents are NOT disposed — the workspace owns them.
     /// </summary>
     public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(PackageWorkspace ws)
@@ -172,6 +175,7 @@ public static class PackageValidator
         results.Add(Check5_AttachmentGroupConsistencyLegacy(ws.Entities));
         results.Add(await Check6_ResxKeyFormatLegacy(ws.ResxFiles));
         results.Add(Check7_AnalyzersDirectoryLegacy(ws.WorkDir));
+        results.Add(Check8_GuidConsistencyLegacy(ws.Entities));
 
         return (results, ws.MtdFiles.Length, ws.ResxFiles.Length);
     }
@@ -707,6 +711,113 @@ public static class PackageValidator
             issues,
             "Скопируйте содержимое <DDS_INSTALL>/Analyzers в .sds/Libraries/Analyzers/. " +
             "Примечание: эта проверка актуальна для git-репозитория решения, а не для .dat пакета."
+        );
+    }
+
+    #endregion
+
+    #region Check8: GUID consistency (Controls ↔ Properties)
+
+    public static IEnumerable<ValidationResult> Check8_GuidConsistency(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        foreach (var (path, doc) in entities)
+        {
+            var root = doc.RootElement;
+            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            // Collect property GUIDs
+            var propertyGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var prop in props.EnumerateArray())
+                {
+                    if (prop.TryGetProperty("NameGuid", out var ng))
+                        propertyGuids.Add(ng.GetString() ?? "");
+                }
+            }
+
+            // Collect ControlGroup GUIDs
+            var controlGroupGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!root.TryGetProperty("Forms", out var forms) || forms.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var form in forms.EnumerateArray())
+            {
+                if (!form.TryGetProperty("Controls", out var controls) || controls.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                // First pass: collect ControlGroup GUIDs
+                foreach (var ctrl in controls.EnumerateArray())
+                {
+                    var ctrlType = ctrl.TryGetProperty("$type", out var ct) ? ct.GetString() ?? "" : "";
+                    if (ctrlType.Contains("ControlGroupMetadata"))
+                    {
+                        if (ctrl.TryGetProperty("NameGuid", out var cgGuid))
+                            controlGroupGuids.Add(cgGuid.GetString() ?? "");
+                    }
+                }
+
+                // Second pass: validate Control references
+                foreach (var ctrl in controls.EnumerateArray())
+                {
+                    var ctrlType = ctrl.TryGetProperty("$type", out var ct) ? ct.GetString() ?? "" : "";
+                    if (!ctrlType.Contains("ControlMetadata") || ctrlType.Contains("ControlGroupMetadata"))
+                        continue;
+
+                    // Skip ancestor metadata
+                    if (ctrl.TryGetProperty("IsAncestorMetadata", out var isAnc) && isAnc.ValueKind == JsonValueKind.True)
+                        continue;
+
+                    var ctrlName = ctrl.TryGetProperty("Name", out var cn) ? cn.GetString() ?? "?" : "?";
+
+                    // Check PropertyGuid
+                    if (ctrl.TryGetProperty("PropertyGuid", out var pgEl))
+                    {
+                        var pg = pgEl.GetString() ?? "";
+                        if (!string.IsNullOrEmpty(pg) && !propertyGuids.Contains(pg))
+                        {
+                            yield return new ValidationResult(
+                                ValidationSeverity.Error,
+                                "Check8_GuidConsistency",
+                                $"`{entityName}` контрол `{ctrlName}`: PropertyGuid `{pg}` не найден среди свойств",
+                                path,
+                                CanAutoFix: false);
+                        }
+                    }
+
+                    // Check ParentGuid
+                    if (ctrl.TryGetProperty("ParentGuid", out var parentEl))
+                    {
+                        var parent = parentEl.GetString() ?? "";
+                        if (!string.IsNullOrEmpty(parent) && !controlGroupGuids.Contains(parent))
+                        {
+                            yield return new ValidationResult(
+                                ValidationSeverity.Warning,
+                                "Check8_GuidConsistency",
+                                $"`{entityName}` контрол `{ctrlName}`: ParentGuid `{parent}` не найден среди ControlGroup",
+                                path,
+                                CanAutoFix: false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static CheckResult Check8_GuidConsistencyLegacy(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        var issues = Check8_GuidConsistency(entities)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "GUID-согласованность Controls ↔ Properties",
+            issues.Count == 0,
+            issues,
+            "Убедитесь, что PropertyGuid в Controls ссылается на NameGuid существующего свойства в Properties."
         );
     }
 

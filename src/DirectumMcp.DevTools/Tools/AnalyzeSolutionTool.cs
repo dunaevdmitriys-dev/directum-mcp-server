@@ -12,7 +12,7 @@ namespace DirectumMcp.DevTools.Tools;
 public class AnalyzeSolutionTool
 {
     [McpServerTool(Name = "analyze_solution")]
-    [Description("Кросс-модульный анализ решения Directum RX. Действия: health — общий отчёт, conflicts — конфликты перекрытий, orphans — сироты, duplicates — дубликаты GUID/Code, versions — совместимость версий, api — карта WebAPI endpoints, cover — карта обложки модуля, rc — проверка Remote Components, trace — cross-layer trace для сущности.")]
+    [Description("Аудит решения Directum RX: health, конфликты, сироты, дубликаты GUID, версии, WebAPI карта, обложки.")]
     public async Task<string> AnalyzeSolution(
         [Description("Путь к корню решения")] string? solutionPath = null,
         [Description("Действие: health | conflicts | orphans | duplicates | versions | api | cover | rc | trace")] string action = "health",
@@ -67,12 +67,12 @@ public class AnalyzeSolutionTool
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                var metaType = GetString(root, "$type");
+                var metaType = root.GetStringProp("$type");
                 if (!metaType.Contains("ModuleMetadata"))
                     continue;
 
-                var moduleName = GetString(root, "Name");
-                var moduleGuid = GetString(root, "NameGuid");
+                var moduleName = root.GetStringProp("Name");
+                var moduleGuid = root.GetStringProp("NameGuid");
 
                 if (string.IsNullOrEmpty(moduleGuid))
                     continue;
@@ -82,7 +82,7 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var dep in depsEl.EnumerateArray())
                     {
-                        var id = GetString(dep, "Id");
+                        var id = dep.GetStringProp("Id");
                         if (!string.IsNullOrEmpty(id))
                             deps.Add(id.ToLowerInvariant());
                     }
@@ -93,7 +93,7 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var ent in entitiesEl.EnumerateArray())
                     {
-                        var id = GetString(ent, "Id");
+                        var id = ent.GetStringProp("Id");
                         if (!string.IsNullOrEmpty(id))
                             entityGuids.Add(id.ToLowerInvariant());
                     }
@@ -120,15 +120,15 @@ public class AnalyzeSolutionTool
                         using var entityDoc = JsonDocument.Parse(entityJson);
                         var entityRoot = entityDoc.RootElement;
 
-                        var entityType = GetString(entityRoot, "$type");
+                        var entityType = entityRoot.GetStringProp("$type");
                         if (!entityType.Contains("EntityMetadata") && !entityType.Contains("DocumentMetadata") &&
                             !entityType.Contains("TaskMetadata") && !entityType.Contains("AssignmentMetadata"))
                             continue;
 
-                        var entityName = GetString(entityRoot, "Name");
-                        var entityGuid = GetString(entityRoot, "NameGuid");
-                        var baseGuid = GetString(entityRoot, "BaseGuid");
-                        var ancestorGuid = GetString(entityRoot, "AncestorGuid");
+                        var entityName = entityRoot.GetStringProp("Name");
+                        var entityGuid = entityRoot.GetStringProp("NameGuid");
+                        var baseGuid = entityRoot.GetStringProp("BaseGuid");
+                        var ancestorGuid = entityRoot.GetStringProp("AncestorGuid");
 
                         if (string.IsNullOrEmpty(entityGuid))
                             continue;
@@ -138,9 +138,9 @@ public class AnalyzeSolutionTool
                         {
                             foreach (var prop in propsEl.EnumerateArray())
                             {
-                                var propName = GetString(prop, "Name");
-                                var propCode = GetString(prop, "Code");
-                                var propType = GetString(prop, "$type");
+                                var propName = prop.GetStringProp("Name");
+                                var propCode = prop.GetStringProp("Code");
+                                var propType = prop.GetStringProp("$type");
                                 if (!string.IsNullOrEmpty(propName))
                                     props.Add(new PropertyInfo(propName, string.IsNullOrEmpty(propCode) ? propName : propCode, propType));
                             }
@@ -661,7 +661,7 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var tab in tabsEl.EnumerateArray())
                     {
-                        var tabName = GetString(tab, "Name");
+                        var tabName = tab.GetStringProp("Name");
                         sb.AppendLine($"### Tab: {(string.IsNullOrEmpty(tabName) ? "(без имени)" : tabName)}");
                         sb.AppendLine();
 
@@ -669,7 +669,7 @@ public class AnalyzeSolutionTool
                         {
                             foreach (var group in groupsEl.EnumerateArray())
                             {
-                                var groupName = GetString(group, "Name");
+                                var groupName = group.GetStringProp("Name");
                                 sb.AppendLine($"  **Group: {(string.IsNullOrEmpty(groupName) ? "(без имени)" : groupName)}**");
                                 sb.AppendLine();
 
@@ -677,8 +677,8 @@ public class AnalyzeSolutionTool
                                 {
                                     foreach (var action in actionsEl.EnumerateArray())
                                     {
-                                        var actionType = GetString(action, "$type");
-                                        var actionName = GetString(action, "Name");
+                                        var actionType = action.GetStringProp("$type");
+                                        var actionName = action.GetStringProp("Name");
                                         var shortType = actionType.Contains("CoverEntityListAction") ? "EntityList"
                                             : actionType.Contains("CoverFunctionAction") ? "Function"
                                             : actionType.Contains("CoverReportAction") ? "Report"
@@ -688,7 +688,7 @@ public class AnalyzeSolutionTool
 
                                         if (actionType.Contains("CoverFunctionAction"))
                                         {
-                                            var funcName = GetString(action, "FunctionName");
+                                            var funcName = action.GetStringProp("FunctionName");
                                             if (!string.IsNullOrEmpty(funcName))
                                             {
                                                 var exists = clientFunctions.Contains(funcName);
@@ -712,9 +712,9 @@ public class AnalyzeSolutionTool
                     sb.AppendLine();
                     foreach (var rc in rcEl.EnumerateArray())
                     {
-                        var rcName = GetString(rc, "Name");
-                        var scope = GetString(rc, "Scope");
-                        var moduleName = GetString(rc, "Module");
+                        var rcName = rc.GetStringProp("Name");
+                        var scope = rc.GetStringProp("Scope");
+                        var moduleName = rc.GetStringProp("Module");
                         sb.AppendLine($"  - {rcName} (Scope: {scope}, Module: {moduleName})");
                     }
                     sb.AppendLine();
@@ -770,9 +770,9 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var ctrl in controlsEl.EnumerateArray())
                     {
-                        var name = GetString(ctrl, "Name");
-                        var loader = GetString(ctrl, "Loader");
-                        var scope = GetString(ctrl, "Scope");
+                        var name = ctrl.GetStringProp("Name");
+                        var loader = ctrl.GetStringProp("Loader");
+                        var scope = ctrl.GetStringProp("Scope");
                         if (!string.IsNullOrEmpty(name))
                             controls.Add((name, loader, scope));
                     }
@@ -782,9 +782,9 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var ldr in loadersEl.EnumerateArray())
                     {
-                        var name = GetString(ldr, "Name");
-                        var loader = GetString(ldr, "Loader");
-                        var scope = GetString(ldr, "Scope");
+                        var name = ldr.GetStringProp("Name");
+                        var loader = ldr.GetStringProp("Loader");
+                        var scope = ldr.GetStringProp("Scope");
                         if (!string.IsNullOrEmpty(name))
                             controls.Add((name, loader, scope));
                     }
@@ -925,7 +925,7 @@ public class AnalyzeSolutionTool
                 {
                     foreach (var ev in eventsEl.EnumerateArray())
                     {
-                        var evName = ev.ValueKind == JsonValueKind.String ? ev.GetString() : GetString(ev, "Name");
+                        var evName = ev.ValueKind == JsonValueKind.String ? ev.GetString() : ev.GetStringProp("Name");
                         if (!string.IsNullOrEmpty(evName))
                             handledEvents.Add(evName);
                     }
@@ -1196,10 +1196,4 @@ public class AnalyzeSolutionTool
             .ToList();
     }
 
-    private static string GetString(JsonElement el, string propertyName)
-    {
-        return el.TryGetProperty(propertyName, out var val) && val.ValueKind == JsonValueKind.String
-            ? val.GetString() ?? ""
-            : "";
-    }
 }
