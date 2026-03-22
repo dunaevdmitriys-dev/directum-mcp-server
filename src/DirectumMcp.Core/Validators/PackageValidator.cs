@@ -31,7 +31,7 @@ public record CheckResult(string Name, bool Passed, List<string> Issues, string 
 
 /// <summary>
 /// Static validator for Directum RX .dat packages (unpacked directory).
-/// Runs 8 checks against MTD and System.resx files.
+/// Runs 14 checks against MTD, System.resx, and C# files.
 /// </summary>
 public static class PackageValidator
 {
@@ -60,7 +60,7 @@ public static class PackageValidator
         RegexOptions.Compiled);
 
     /// <summary>
-    /// Runs all 8 checks on an unpacked package directory.
+    /// Runs all 14 checks on an unpacked package directory.
     /// Returns a list of ValidationResult for each found issue.
     /// </summary>
     public static async Task<List<ValidationResult>> RunAllChecks(string workDir)
@@ -92,6 +92,12 @@ public static class PackageValidator
         results.AddRange(await Check6_ResxKeyFormat(resxFiles));
         results.AddRange(Check7_AnalyzersDirectory(workDir));
         results.AddRange(Check8_GuidConsistency(entities));
+        results.AddRange(Check9_DisplayNameCompleteness(entities, workDir));
+        results.AddRange(Check10_EmptyControlsWithOverridden(entities));
+        results.AddRange(Check11_CoverFunctionActions(modules, workDir));
+        results.AddRange(Check12_FormTabsDetection(entities));
+        results.AddRange(Check13_PublicStructuresGcs(modules, workDir));
+        results.AddRange(Check14_DomainApiVersion(entities));
 
         // Dispose documents
         foreach (var (_, doc) in entities) doc.Dispose();
@@ -101,7 +107,7 @@ public static class PackageValidator
     }
 
     /// <summary>
-    /// Runs all 8 checks and returns legacy CheckResult list for backward-compatible report formatting.
+    /// Runs all 14 checks and returns legacy CheckResult list for backward-compatible report formatting.
     /// </summary>
     public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(string workDir)
     {
@@ -132,6 +138,12 @@ public static class PackageValidator
         results.Add(await Check6_ResxKeyFormatLegacy(resxFiles));
         results.Add(Check7_AnalyzersDirectoryLegacy(workDir));
         results.Add(Check8_GuidConsistencyLegacy(entities));
+        results.Add(Check9_DisplayNameCompletenessLegacy(entities, workDir));
+        results.Add(Check10_EmptyControlsWithOverriddenLegacy(entities));
+        results.Add(Check11_CoverFunctionActionsLegacy(modules, workDir));
+        results.Add(Check12_FormTabsDetectionLegacy(entities));
+        results.Add(Check13_PublicStructuresGcsLegacy(modules, workDir));
+        results.Add(Check14_DomainApiVersionLegacy(entities));
 
         // Dispose documents
         foreach (var (_, doc) in entities) doc.Dispose();
@@ -141,7 +153,7 @@ public static class PackageValidator
     }
 
     /// <summary>
-    /// Runs all 8 checks using a pre-opened PackageWorkspace.
+    /// Runs all 14 checks using a pre-opened PackageWorkspace.
     /// Documents are NOT disposed — the workspace owns them.
     /// </summary>
     public static async Task<List<ValidationResult>> RunAllChecks(PackageWorkspace ws)
@@ -156,12 +168,18 @@ public static class PackageValidator
         results.AddRange(await Check6_ResxKeyFormat(ws.ResxFiles));
         results.AddRange(Check7_AnalyzersDirectory(ws.WorkDir));
         results.AddRange(Check8_GuidConsistency(ws.Entities));
+        results.AddRange(Check9_DisplayNameCompleteness(ws.Entities, ws.WorkDir));
+        results.AddRange(Check10_EmptyControlsWithOverridden(ws.Entities));
+        results.AddRange(Check11_CoverFunctionActions(ws.Modules, ws.WorkDir));
+        results.AddRange(Check12_FormTabsDetection(ws.Entities));
+        results.AddRange(Check13_PublicStructuresGcs(ws.Modules, ws.WorkDir));
+        results.AddRange(Check14_DomainApiVersion(ws.Entities));
 
         return results;
     }
 
     /// <summary>
-    /// Runs all 8 checks using a pre-opened PackageWorkspace, returning legacy CheckResult format.
+    /// Runs all 14 checks using a pre-opened PackageWorkspace, returning legacy CheckResult format.
     /// Documents are NOT disposed — the workspace owns them.
     /// </summary>
     public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(PackageWorkspace ws)
@@ -176,6 +194,12 @@ public static class PackageValidator
         results.Add(await Check6_ResxKeyFormatLegacy(ws.ResxFiles));
         results.Add(Check7_AnalyzersDirectoryLegacy(ws.WorkDir));
         results.Add(Check8_GuidConsistencyLegacy(ws.Entities));
+        results.Add(Check9_DisplayNameCompletenessLegacy(ws.Entities, ws.WorkDir));
+        results.Add(Check10_EmptyControlsWithOverriddenLegacy(ws.Entities));
+        results.Add(Check11_CoverFunctionActionsLegacy(ws.Modules, ws.WorkDir));
+        results.Add(Check12_FormTabsDetectionLegacy(ws.Entities));
+        results.Add(Check13_PublicStructuresGcsLegacy(ws.Modules, ws.WorkDir));
+        results.Add(Check14_DomainApiVersionLegacy(ws.Entities));
 
         return (results, ws.MtdFiles.Length, ws.ResxFiles.Length);
     }
@@ -818,6 +842,433 @@ public static class PackageValidator
             issues.Count == 0,
             issues,
             "Убедитесь, что PropertyGuid в Controls ссылается на NameGuid существующего свойства в Properties."
+        );
+    }
+
+    #endregion
+
+    #region Check9: DisplayName completeness in System.ru.resx
+
+    public static IEnumerable<ValidationResult> Check9_DisplayNameCompleteness(
+        List<(string Path, JsonDocument Doc)> entities, string workDir)
+    {
+        var ruResxFiles = Directory.GetFiles(workDir, "*System.ru.resx", SearchOption.AllDirectories);
+        var resxKeyMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var file in ruResxFiles)
+        {
+            var entityName = System.IO.Path.GetFileName(file)
+                .Replace("System.ru.resx", "", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(entityName)) continue;
+
+            try
+            {
+                var xml = File.ReadAllText(file);
+                var xdoc = XDocument.Parse(xml);
+                var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var data in xdoc.Descendants("data"))
+                {
+                    var name = data.Attribute("name")?.Value;
+                    if (!string.IsNullOrEmpty(name))
+                        keys.Add(name);
+                }
+                resxKeyMap[entityName] = keys;
+            }
+            catch { /* skip unparseable resx */ }
+        }
+
+        foreach (var (path, doc) in entities)
+        {
+            var root = doc.RootElement;
+            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
+            if (string.IsNullOrEmpty(entityName)) continue;
+
+            // Skip child entities (IsChildEntity: true)
+            if (root.TryGetProperty("IsChildEntity", out var ice) && ice.ValueKind == JsonValueKind.True)
+                continue;
+
+            if (!resxKeyMap.TryGetValue(entityName, out var keys))
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Warning,
+                    "Check9_DisplayNameCompleteness",
+                    $"`{entityName}`: файл `{entityName}System.ru.resx` не найден",
+                    path,
+                    CanAutoFix: true);
+                continue;
+            }
+
+            if (!keys.Contains("DisplayName"))
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Warning,
+                    "Check9_DisplayNameCompleteness",
+                    $"`{entityName}`: отсутствует ключ `DisplayName` в System.ru.resx",
+                    path,
+                    CanAutoFix: true);
+            }
+
+            if (!root.TryGetProperty("Properties", out var props) || props.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var prop in props.EnumerateArray())
+            {
+                if (prop.TryGetProperty("IsAncestorMetadata", out var isAnc) && isAnc.ValueKind == JsonValueKind.True)
+                    continue;
+
+                var propName = prop.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "" : "";
+                if (string.IsNullOrEmpty(propName)) continue;
+
+                var expectedKey = $"Property_{propName}";
+                if (!keys.Contains(expectedKey))
+                {
+                    yield return new ValidationResult(
+                        ValidationSeverity.Warning,
+                        "Check9_DisplayNameCompleteness",
+                        $"`{entityName}`: отсутствует ключ `{expectedKey}` в System.ru.resx",
+                        path,
+                        CanAutoFix: true);
+                }
+            }
+        }
+    }
+
+    private static CheckResult Check9_DisplayNameCompletenessLegacy(
+        List<(string Path, JsonDocument Doc)> entities, string workDir)
+    {
+        var issues = Check9_DisplayNameCompleteness(entities, workDir)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "Полнота DisplayName и Property_* в System.ru.resx",
+            issues.Count == 0,
+            issues,
+            "Используйте `sync_resx_keys` для добавления недостающих ключей в System.ru.resx."
+        );
+    }
+
+    #endregion
+
+    #region Check10: Empty Controls with Overridden
+
+    public static IEnumerable<ValidationResult> Check10_EmptyControlsWithOverridden(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        foreach (var (path, doc) in entities)
+        {
+            var root = doc.RootElement;
+            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            if (!root.TryGetProperty("Overridden", out var overridden) ||
+                overridden.ValueKind != JsonValueKind.Array)
+                continue;
+
+            bool overridesControls = false;
+            foreach (var item in overridden.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String &&
+                    string.Equals(item.GetString(), "Controls", StringComparison.OrdinalIgnoreCase))
+                {
+                    overridesControls = true;
+                    break;
+                }
+            }
+            if (!overridesControls) continue;
+
+            if (!root.TryGetProperty("Forms", out var forms) || forms.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var form in forms.EnumerateArray())
+            {
+                var formOverridden = form.TryGetProperty("Overridden", out var fo) ? fo : default;
+                bool formOverridesControls = false;
+
+                if (formOverridden.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in formOverridden.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String &&
+                            string.Equals(item.GetString(), "Controls", StringComparison.OrdinalIgnoreCase))
+                        {
+                            formOverridesControls = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!formOverridesControls) continue;
+
+                if (!form.TryGetProperty("Controls", out var controls) ||
+                    controls.ValueKind != JsonValueKind.Array ||
+                    controls.GetArrayLength() == 0)
+                {
+                    yield return new ValidationResult(
+                        ValidationSeverity.Error,
+                        "Check10_EmptyControlsOverridden",
+                        $"`{entityName}`: Overridden содержит Controls, но Controls пуст — карточка будет без полей",
+                        path,
+                        CanAutoFix: false);
+                }
+            }
+        }
+    }
+
+    private static CheckResult Check10_EmptyControlsWithOverriddenLegacy(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        var issues = Check10_EmptyControlsWithOverridden(entities)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "Пустые Controls при Overridden (пустая карточка)",
+            issues.Count == 0,
+            issues,
+            "Либо уберите Controls из Overridden (наследовать форму), либо добавьте контролы в Forms[].Controls."
+        );
+    }
+
+    #endregion
+
+    #region Check11: CoverFunctionAction vs ClientFunctions
+
+    public static IEnumerable<ValidationResult> Check11_CoverFunctionActions(
+        List<(string Path, JsonDocument Doc)> modules, string workDir)
+    {
+        var csFiles = Directory.GetFiles(workDir, "*ClientFunctions.cs", SearchOption.AllDirectories);
+        var allCsContent = new Lazy<string>(() =>
+            string.Join("\n", csFiles.Select(f => File.ReadAllText(f))));
+
+        foreach (var (path, doc) in modules)
+        {
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("Cover", out var cover)) continue;
+            if (!cover.TryGetProperty("Actions", out var actions) ||
+                actions.ValueKind != JsonValueKind.Array) continue;
+
+            var moduleName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            foreach (var action in actions.EnumerateArray())
+            {
+                var typeProp = action.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
+                if (!typeProp.Contains("CoverFunctionActionMetadata")) continue;
+
+                if (!action.TryGetProperty("FunctionName", out var fnEl)) continue;
+                var functionName = fnEl.GetString() ?? "";
+                if (string.IsNullOrEmpty(functionName)) continue;
+
+                if (csFiles.Length == 0 || !allCsContent.Value.Contains(functionName))
+                {
+                    yield return new ValidationResult(
+                        ValidationSeverity.Error,
+                        "Check11_CoverFunctionActions",
+                        $"Модуль `{moduleName}`: CoverFunctionAction `{functionName}` не найден в *ClientFunctions.cs",
+                        path,
+                        CanAutoFix: false);
+                }
+            }
+        }
+    }
+
+    private static CheckResult Check11_CoverFunctionActionsLegacy(
+        List<(string Path, JsonDocument Doc)> modules, string workDir)
+    {
+        var issues = Check11_CoverFunctionActions(modules, workDir)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "CoverFunctionAction ↔ ClientFunctions.cs (совпадение имён)",
+            issues.Count == 0,
+            issues,
+            "Добавьте метод с точно таким же именем в ModuleClientFunctions.cs."
+        );
+    }
+
+    #endregion
+
+    #region Check12: FormTabs detection (not supported in DDS 25.3)
+
+    public static IEnumerable<ValidationResult> Check12_FormTabsDetection(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        foreach (var (path, doc) in entities)
+        {
+            var root = doc.RootElement;
+            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            if (root.TryGetProperty("FormTabs", out var ft) &&
+                ft.ValueKind != JsonValueKind.Null &&
+                ft.ValueKind != JsonValueKind.Undefined)
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Warning,
+                    "Check12_FormTabs",
+                    $"`{entityName}`: содержит FormTabs — не поддерживается в DDS 25.3",
+                    path,
+                    CanAutoFix: false);
+            }
+
+            if (root.TryGetProperty("Forms", out var forms) && forms.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var form in forms.EnumerateArray())
+                {
+                    if (form.TryGetProperty("FormTabs", out var fft) &&
+                        fft.ValueKind != JsonValueKind.Null &&
+                        fft.ValueKind != JsonValueKind.Undefined)
+                    {
+                        yield return new ValidationResult(
+                            ValidationSeverity.Warning,
+                            "Check12_FormTabs",
+                            $"`{entityName}` форма: содержит FormTabs — не поддерживается в DDS 25.3",
+                            path,
+                            CanAutoFix: false);
+                    }
+                }
+            }
+        }
+    }
+
+    private static CheckResult Check12_FormTabsDetectionLegacy(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        var issues = Check12_FormTabsDetection(entities)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "FormTabs (не поддерживается в DDS 25.3)",
+            issues.Count == 0,
+            issues,
+            "Удалите FormTabs из MTD — DDS 25.3 не поддерживает вкладки в StandaloneFormMetadata."
+        );
+    }
+
+    #endregion
+
+    #region Check13: PublicStructures .g.cs existence
+
+    public static IEnumerable<ValidationResult> Check13_PublicStructuresGcs(
+        List<(string Path, JsonDocument Doc)> modules, string workDir)
+    {
+        foreach (var (path, doc) in modules)
+        {
+            var root = doc.RootElement;
+            var moduleName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            if (!root.TryGetProperty("PublicStructures", out var ps) ||
+                ps.ValueKind != JsonValueKind.Array ||
+                ps.GetArrayLength() == 0)
+                continue;
+
+            bool hasProperties = false;
+            foreach (var structure in ps.EnumerateArray())
+            {
+                if (structure.TryGetProperty("Properties", out var props) &&
+                    props.ValueKind == JsonValueKind.Array &&
+                    props.GetArrayLength() > 0)
+                {
+                    hasProperties = true;
+                    break;
+                }
+            }
+            if (!hasProperties) continue;
+
+            var gcsFiles = Directory.GetFiles(workDir, "ModuleStructures.g.cs", SearchOption.AllDirectories);
+            if (gcsFiles.Length == 0)
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Info,
+                    "Check13_PublicStructuresGcs",
+                    $"Модуль `{moduleName}`: PublicStructures определены, но `ModuleStructures.g.cs` не найден",
+                    path,
+                    CanAutoFix: false);
+            }
+        }
+    }
+
+    private static CheckResult Check13_PublicStructuresGcsLegacy(
+        List<(string Path, JsonDocument Doc)> modules, string workDir)
+    {
+        var issues = Check13_PublicStructuresGcs(modules, workDir)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "PublicStructures → ModuleStructures.g.cs",
+            issues.Count == 0,
+            issues,
+            "Сгенерируйте ModuleStructures.g.cs из Module.mtd с помощью `generate_structures_cs` и установите read-only."
+        );
+    }
+
+    #endregion
+
+    #region Check14: DomainApi version in Versions array
+
+    public static IEnumerable<ValidationResult> Check14_DomainApiVersion(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        foreach (var (path, doc) in entities)
+        {
+            var root = doc.RootElement;
+            var entityName = root.TryGetProperty("Name", out var n) ? n.GetString() ?? "?" : "?";
+
+            // Skip auto-generated child entities
+            if (root.TryGetProperty("IsAutoGenerated", out var iag) && iag.ValueKind == JsonValueKind.True)
+                continue;
+
+            if (!root.TryGetProperty("Versions", out var versions) ||
+                versions.ValueKind != JsonValueKind.Array)
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Error,
+                    "Check14_DomainApiVersion",
+                    $"`{entityName}`: отсутствует массив Versions",
+                    path,
+                    CanAutoFix: true);
+                continue;
+            }
+
+            bool hasDomainApi2 = false;
+            foreach (var ver in versions.EnumerateArray())
+            {
+                if (ver.TryGetProperty("Type", out var typeEl) &&
+                    string.Equals(typeEl.GetString(), "DomainApi", StringComparison.OrdinalIgnoreCase) &&
+                    ver.TryGetProperty("Number", out var numEl) &&
+                    numEl.TryGetInt32(out var num) && num >= 2)
+                {
+                    hasDomainApi2 = true;
+                    break;
+                }
+            }
+
+            if (!hasDomainApi2)
+            {
+                yield return new ValidationResult(
+                    ValidationSeverity.Error,
+                    "Check14_DomainApiVersion",
+                    $"`{entityName}`: отсутствует `DomainApi: 2` в Versions",
+                    path,
+                    CanAutoFix: true);
+            }
+        }
+    }
+
+    private static CheckResult Check14_DomainApiVersionLegacy(
+        List<(string Path, JsonDocument Doc)> entities)
+    {
+        var issues = Check14_DomainApiVersion(entities)
+            .Select(r => $"  - {r.Message}")
+            .ToList();
+
+        return new CheckResult(
+            "DomainApi:2 в Versions (обязателен для DDS 25.3)",
+            issues.Count == 0,
+            issues,
+            "Добавьте { \"Type\": \"DomainApi\", \"Number\": 2 } в массив Versions каждой сущности."
         );
     }
 

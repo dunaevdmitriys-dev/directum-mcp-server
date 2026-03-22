@@ -633,6 +633,337 @@ public class PackageValidatorTests : IDisposable
 
     #endregion
 
+    #region Check9: DisplayName completeness
+
+    [Fact]
+    public void Check9_MissingDisplayName_ReturnsWarning()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000010",
+          "Name": "TestEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Properties": [
+            {
+              "$type": "Sungero.Metadata.StringPropertyMetadata",
+              "NameGuid": "bbbbbbbb-0000-0000-0000-000000000010",
+              "Name": "Title",
+              "Code": "Title"
+            }
+          ]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        // Create resx WITHOUT DisplayName
+        var resxDir = Path.Combine(_tempDir, "check9_missing");
+        Directory.CreateDirectory(resxDir);
+        File.WriteAllText(Path.Combine(resxDir, "TestEntitySystem.ru.resx"),
+            BuildResxXml(new Dictionary<string, string> { ["Property_Title"] = "Заголовок" }));
+
+        var results = PackageValidator.Check9_DisplayNameCompleteness(entities, resxDir).ToList();
+
+        Assert.Contains(results, r => r.Message.Contains("DisplayName"));
+        Assert.All(results, r => Assert.Equal(ValidationSeverity.Warning, r.Type));
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check9_MissingPropertyKey_ReturnsWarning()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000011",
+          "Name": "TestEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Properties": [
+            {
+              "$type": "Sungero.Metadata.StringPropertyMetadata",
+              "NameGuid": "bbbbbbbb-0000-0000-0000-000000000011",
+              "Name": "Amount",
+              "Code": "Amount"
+            }
+          ]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var resxDir = Path.Combine(_tempDir, "check9_prop");
+        Directory.CreateDirectory(resxDir);
+        File.WriteAllText(Path.Combine(resxDir, "TestEntitySystem.ru.resx"),
+            BuildResxXml(new Dictionary<string, string> { ["DisplayName"] = "Тест" }));
+
+        var results = PackageValidator.Check9_DisplayNameCompleteness(entities, resxDir).ToList();
+
+        Assert.Contains(results, r => r.Message.Contains("Property_Amount"));
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check9_NoResxFile_ReturnsWarning()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000012",
+          "Name": "OrphanEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Properties": []
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var emptyDir = Path.Combine(_tempDir, "check9_empty");
+        Directory.CreateDirectory(emptyDir);
+
+        var results = PackageValidator.Check9_DisplayNameCompleteness(entities, emptyDir).ToList();
+
+        Assert.Single(results);
+        Assert.Contains("не найден", results[0].Message);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check9_AllKeysPresent_ReturnsEmpty()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000013",
+          "Name": "GoodEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Properties": [
+            {
+              "$type": "Sungero.Metadata.StringPropertyMetadata",
+              "NameGuid": "bbbbbbbb-0000-0000-0000-000000000013",
+              "Name": "Name",
+              "Code": "Name"
+            }
+          ]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var resxDir = Path.Combine(_tempDir, "check9_good");
+        Directory.CreateDirectory(resxDir);
+        File.WriteAllText(Path.Combine(resxDir, "GoodEntitySystem.ru.resx"),
+            BuildResxXml(new Dictionary<string, string>
+            {
+                ["DisplayName"] = "Хорошая сущность",
+                ["Property_Name"] = "Наименование"
+            }));
+
+        var results = PackageValidator.Check9_DisplayNameCompleteness(entities, resxDir).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    #endregion
+
+    #region Check10: Empty Controls with Overridden
+
+    [Fact]
+    public void Check10_OverriddenControlsEmpty_ReturnsError()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000020",
+          "Name": "EmptyFormEntity",
+          "BaseGuid": "58cca102-1e97-4f07-b6ac-fd866a8b7cb1",
+          "Overridden": ["Controls"],
+          "Forms": [{
+            "$type": "Sungero.Metadata.StandaloneFormMetadata",
+            "NameGuid": "fa03f748-4397-42ef-bdc2-22119af7bf7f",
+            "Name": "Card",
+            "Controls": [],
+            "Overridden": ["Controls"]
+          }]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check10_EmptyControlsWithOverridden(entities).ToList();
+
+        Assert.Single(results);
+        Assert.Equal(ValidationSeverity.Error, results[0].Type);
+        Assert.Contains("пуст", results[0].Message);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check10_OverriddenControlsWithContent_ReturnsEmpty()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000021",
+          "Name": "GoodFormEntity",
+          "BaseGuid": "58cca102-1e97-4f07-b6ac-fd866a8b7cb1",
+          "Overridden": ["Controls"],
+          "Forms": [{
+            "$type": "Sungero.Metadata.StandaloneFormMetadata",
+            "NameGuid": "fa03f748-4397-42ef-bdc2-22119af7bf7f",
+            "Name": "Card",
+            "Controls": [{"$type": "Sungero.Metadata.ControlGroupMetadata", "NameGuid": "11111111-0000-0000-0000-000000000021", "Name": "Main"}],
+            "Overridden": ["Controls"]
+          }]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check10_EmptyControlsWithOverridden(entities).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check10_NoOverridden_ReturnsEmpty()
+    {
+        var entities = ParseEntities(DatabookEntityNoCollection());
+
+        var results = PackageValidator.Check10_EmptyControlsWithOverridden(entities).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    #endregion
+
+    #region Check12: FormTabs detection
+
+    [Fact]
+    public void Check12_EntityWithFormTabs_ReturnsWarning()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000030",
+          "Name": "TabEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "FormTabs": [{"Name": "Tab1"}]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check12_FormTabsDetection(entities).ToList();
+
+        Assert.Single(results);
+        Assert.Equal(ValidationSeverity.Warning, results[0].Type);
+        Assert.Contains("FormTabs", results[0].Message);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check12_EntityWithoutFormTabs_ReturnsEmpty()
+    {
+        var entities = ParseEntities(DatabookEntityNoCollection());
+
+        var results = PackageValidator.Check12_FormTabsDetection(entities).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    #endregion
+
+    #region Check14: DomainApi version
+
+    [Fact]
+    public void Check14_MissingDomainApi_ReturnsError()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000040",
+          "Name": "NoDomainApi",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Versions": [
+            {"Type": "EntityMetadata", "Number": 13}
+          ]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check14_DomainApiVersion(entities).ToList();
+
+        Assert.Single(results);
+        Assert.Equal(ValidationSeverity.Error, results[0].Type);
+        Assert.Contains("DomainApi", results[0].Message);
+        Assert.True(results[0].CanAutoFix);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check14_HasDomainApi2_ReturnsEmpty()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000041",
+          "Name": "GoodEntity",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0",
+          "Versions": [
+            {"Type": "EntityMetadata", "Number": 13},
+            {"Type": "DomainApi", "Number": 2}
+          ]
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check14_DomainApiVersion(entities).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check14_NoVersionsArray_ReturnsError()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000042",
+          "Name": "NoVersions",
+          "BaseGuid": "04581d26-0780-4cfd-b3cd-c2cafc5798b0"
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check14_DomainApiVersion(entities).ToList();
+
+        Assert.Single(results);
+        Assert.Contains("Versions", results[0].Message);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    [Fact]
+    public void Check14_AutoGeneratedEntity_Skipped()
+    {
+        var entityJson = """
+        {
+          "$type": "Sungero.Metadata.EntityMetadata",
+          "NameGuid": "aaaaaaaa-0000-0000-0000-000000000043",
+          "Name": "AutoGenChild",
+          "BaseGuid": "a3d38bf5-0414-41f6-bb33-a4621d2e5a60",
+          "IsAutoGenerated": true,
+          "Versions": []
+        }
+        """;
+        var entities = ParseEntities(entityJson);
+
+        var results = PackageValidator.Check14_DomainApiVersion(entities).ToList();
+
+        Assert.Empty(results);
+        foreach (var (_, doc) in entities) doc.Dispose();
+    }
+
+    #endregion
+
     #region ValidationResult record shape
 
     [Fact]

@@ -70,7 +70,11 @@ public class FixPackageToolTests : IDisposable
               "IsRequired": true
             }
           ],
-          "Actions": []
+          "Actions": [],
+          "Versions": [
+            {"Type": "EntityMetadata", "Number": 13},
+            {"Type": "DomainApi", "Number": 2}
+          ]
         }
         """;
 
