@@ -3,13 +3,15 @@
 ## Project Overview
 Standalone MCP (Model Context Protocol) server for Directum RX platform.
 Two logical servers in one solution:
-- **DirectumDev.Mcp** — Development tools (file-based, no RX connection needed)
-- **DirectumRx.Mcp** — Runtime tools (OData API to running Directum RX instance)
+- **DirectumDev.Mcp** — Development tools (64 tools, 27 Resources, 9 Prompts)
+- **DirectumRx.Mcp** — Runtime tools (25 tools, 4 Resources, 5 Prompts)
+
+Total: **89 tools, 31 Resources, 14 Prompts, 619 tests, ~42K LOC**
 
 ## Technology Stack
 - .NET 8 Console App
 - NuGet: `ModelContextProtocol` (v1.1.0)
-- Transport: stdio (primary), Streamable HTTP (future)
+- Transport: stdio
 - OData v4 client for Directum RX Integration Service
 - JSON parsing for MTD metadata files
 
@@ -22,38 +24,63 @@ Two logical servers in one solution:
 ```
 directum-mcp-server/
 ├── src/
-│   ├── DirectumMcp.Core/          — Shared models, OData client, MTD parser
-│   ├── DirectumMcp.DevTools/      — Development MCP server (stdio)
-│   │   └── Tools/
-│   │       ├── InspectTool.cs         — inspect: universal metadata reader
-│   │       ├── ValidatePackageTool.cs — check_package: 7 validation checks
-│   │       ├── FixPackageTool.cs      — fix_package: auto-fix package issues
-│   │       ├── ValidateResxTool.cs    — check_resx: resx validation
-│   │       ├── SearchMetadataTool.cs  — search_metadata: full-text MTD search
-│   │       ├── DependencyGraphTool.cs — dependency_graph: module dependency analysis
-│   │       ├── FindDeadResourcesTool.cs — find_dead_resources: orphaned resx keys
-│   │       ├── DiffPackagesTool.cs    — diff_packages: compare two packages
-│   │       └── CheckCodeConsistencyTool.cs — check_code_consistency: MTD↔C# agreement
-│   ├── DirectumMcp.RuntimeTools/  — Runtime MCP server (stdio)
-│   │   └── Tools/
-│   │       ├── SearchDocumentsTool.cs     — find_docs
-│   │       ├── MyAssignmentsTool.cs       — my_tasks
-│   │       ├── CompleteAssignmentTool.cs   — complete
-│   │       ├── CreateTaskTool.cs          — send_task
-│   │       ├── SummarizeTool.cs           — summarize
-│   │       └── BulkCompleteTool.cs        — bulk_complete
-│   └── DirectumMcp.Tests/        — Unit tests
-├── .mcp.json                      — Claude Code MCP config
-├── CLAUDE.md                      — This file
+│   ├── DirectumMcp.Core/              — Shared: models, OData client, parsers, validators
+│   │   ├── Services/                  — 9 services (EntityScaffold, PackageValidate, Pipeline...)
+│   │   ├── Pipeline/                  — PipelineExecutor + Registry + PlaceholderResolver
+│   │   ├── Validators/                — PackageValidator (14 checks), PackageWorkspace
+│   │   ├── Helpers/                   — DirectumConstants, PathGuard, ODataHelpers
+│   │   ├── Models/                    — MtdModels, DirectumConfig
+│   │   ├── Parsers/                   — MtdParser, ResxParser
+│   │   └── OData/                     — DirectumODataClient
+│   │
+│   ├── DirectumMcp.DevTools/          — Development MCP server (stdio)
+│   │   ├── Tools/                     — 64 tools (scaffold_*, validate_*, analyze_*, ...)
+│   │   ├── Resources/                 — PlatformKnowledgeBase (22 static + 3 dynamic)
+│   │   └── Prompts/                   — 9 prompts (create-solution, review-package, ...)
+│   │
+│   ├── DirectumMcp.RuntimeTools/      — Runtime MCP server (stdio)
+│   │   ├── Tools/                     — 25 tools (search, analyze_*, delegate, ...)
+│   │   ├── Resources/                 — RuntimeKnowledgeBase (4 resources)
+│   │   └── Prompts/                   — 5 prompts (analyze-workload, quick-dashboard, ...)
+│   │
+│   └── DirectumMcp.Tests/            — 619 unit tests (xUnit)
+│
+├── .mcp.json                          — Claude Code MCP config
+├── CLAUDE.md                          — This file
 └── README.md
 ```
+
+## Key Architecture Patterns
+
+### Services Layer (Core/Services/)
+- Each tool delegates to a Service with typed Request/Result
+- Services implement `IPipelineStep` for dual-use (MCP + pipeline)
+- 9 services: ModuleScaffold, EntityScaffold, FunctionScaffold, JobScaffold,
+  PackageValidate, PackageFix, PackageBuild, InitializerGenerate, PreviewCard
+
+### Pipeline (Core/Pipeline/)
+- `PipelineExecutor` — sequential step execution
+- `PlaceholderResolver` — `$prev.field`, `$steps[0].field`, `$steps[id].field`
+- `PipelineToolRegistry` — 9 tools available for pipeline
+
+### Knowledge Base (Resources/)
+- PlatformKnowledgeBase.cs — 22 static Resources (~2253 lines), covering:
+  - Platform rules, entity types, module GUIDs (30/30 modules)
+  - Entity catalog (30+ entities with GUIDs, properties, usage guide)
+  - C# patterns, workflow patterns, property types
+  - Solution design (CRM, ESM, HR archetypes)
+  - 4 solution-specific patterns: crm-patterns, esm-patterns, targets-patterns, solutions-reference
+  - Known issues (18 DDS problems), integration patterns, report patterns
+- DynamicResources.cs — 3 live Resources from SOLUTION_PATH
+- RuntimeKnowledgeBase.cs — 4 Resources (OData, tasks, documents, analytics)
 
 ## Coding Conventions
 - C# 12, file-scoped namespaces, nullable enabled
 - Async/await everywhere
 - Tool classes: `[McpServerToolType]`, methods: `[McpServerTool]`
-- One tool per file
+- One tool per file (thin wrapper → Service in Core)
 - `[McpServerTool(Name = "...")]` + separate `[Description("...")]` (NOT Description inside McpServerTool)
 - Russian descriptions for user-facing text
 - English code, comments only where logic is non-obvious
 - No excessive error handling — fail fast with clear messages
+- PathGuard for all file-system operations in DevTools
