@@ -47,9 +47,44 @@ public partial class NaturalSearchTool
     private SearchIntent DetectIntent(string q)
     {
         // Priority order matters — check specific before generic
+        // v2: +8 intents (Approvals, ActionItems, Absences, Memos, IncomingLetters, OutgoingLetters, BusinessUnits, Notices)
+
+        // Approvals — before Assignments (more specific)
+        if (MatchesAny(q, "согласовани", "утвержд", "подпис", "визирован", "на согласован"))
+            return SearchIntent.Approvals;
+
+        // ActionItems — before Assignments (more specific)
+        if (MatchesAny(q, "поручени", "контрольн", "на контрол"))
+            return SearchIntent.ActionItems;
+
+        // Absences — before Employees
+        if (MatchesAny(q, "больничн", "отпуск", "командировк", "отсутств", "кто отсутств", "на больничном"))
+            return SearchIntent.Absences;
+
+        // IncomingLetters — before Documents
+        if (MatchesAny(q, "входящее", "входящ письм", "входящие", "корреспонденц"))
+            return SearchIntent.IncomingLetters;
+
+        // OutgoingLetters
+        if (MatchesAny(q, "исходящее", "исходящ", "исходящие"))
+            return SearchIntent.OutgoingLetters;
+
+        // Memos
+        if (MatchesAny(q, "служебная записка", "служебн", "служебк", "записка", "записки"))
+            return SearchIntent.Memos;
+
+        // Notices
+        if (MatchesAny(q, "уведомлени", "ознакомлени", "извещени"))
+            return SearchIntent.Notices;
+
+        // BusinessUnits
+        if (MatchesAny(q, "наша организаци", "юрлиц", "юридическ", "нор ", "наши организации", "бизнес-единиц"))
+            return SearchIntent.BusinessUnits;
+
+        // Original intents
         if (MatchesAny(q, "договор", "контракт", "соглашени"))
             return SearchIntent.Contracts;
-        if (MatchesAny(q, "задани", "поручени", "исполнени", "просрочен"))
+        if (MatchesAny(q, "задани", "исполнени", "просрочен"))
             return SearchIntent.Assignments;
         if (MatchesAny(q, "задач", "задачу", "задачи"))
             return SearchIntent.Tasks;
@@ -59,7 +94,7 @@ public partial class NaturalSearchTool
             return SearchIntent.Companies;
         if (MatchesAny(q, "подразделени", "отдел", "департамент", "управлени"))
             return SearchIntent.Departments;
-        if (MatchesAny(q, "документ", "файл", "письм", "приказ", "распоряжени", "акт ", "накладн", "счёт", "счет"))
+        if (MatchesAny(q, "документ", "файл", "приказ", "распоряжени", "акт ", "накладн", "счёт", "счет"))
             return SearchIntent.Documents;
 
         // Default: search documents as the most common entity
@@ -77,6 +112,14 @@ public partial class NaturalSearchTool
             SearchIntent.Companies => await SearchCompanies(q, top),
             SearchIntent.Departments => await SearchDepartments(q, top),
             SearchIntent.Documents => await SearchDocuments(q, top),
+            SearchIntent.Approvals => await SearchApprovals(q, top),
+            SearchIntent.ActionItems => await SearchActionItems(q, top),
+            SearchIntent.Absences => await SearchAbsences(q, top),
+            SearchIntent.Memos => await SearchMemos(q, top),
+            SearchIntent.IncomingLetters => await SearchIncomingLetters(q, top),
+            SearchIntent.OutgoingLetters => await SearchOutgoingLetters(q, top),
+            SearchIntent.Notices => await SearchNotices(q, top),
+            SearchIntent.BusinessUnits => await SearchBusinessUnits(q, top),
             _ => await SearchDocuments(q, top)
         };
     }
@@ -678,6 +721,207 @@ public partial class NaturalSearchTool
     [GeneratedRegex(@"\b\d{10,12}\b")]
     private static partial Regex TinRegex();
 
+    #region v2: New Search Methods (+8 intents)
+
+    private async Task<string> SearchApprovals(string q, int top)
+    {
+        var filters = new List<string> { "Status eq 'InProcess'" };
+        var (dateFilters, _) = ExtractDateFilters(q, "Created");
+        filters.AddRange(dateFilters);
+
+        var filter = string.Join(" and ", filters);
+        var json = await _client.GetAsync("IAssignments", filter, "Id,Subject,Deadline,Importance",
+            "Deadline asc", top, expand: "Performer($select=Name),Author($select=Name),Task($select=Subject)");
+
+        return FormatResults("Согласования (в работе)", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var subj = item.TryGetProperty("Subject", out var s) ? s.GetString() ?? "" : "";
+            var perf = item.TryGetProperty("Performer", out var p) && p.ValueKind == JsonValueKind.Object
+                ? p.TryGetProperty("Name", out var pn) ? pn.GetString() ?? "" : "" : "";
+            var dl = item.TryGetProperty("Deadline", out var d) && d.ValueKind == JsonValueKind.String
+                ? DateTime.TryParse(d.GetString(), out var dt) ? dt.ToString("dd.MM.yyyy") : "" : "";
+            return $"#{id} {subj}\n  Исполнитель: {perf} | Срок: {dl}";
+        });
+    }
+
+    private async Task<string> SearchActionItems(string q, int top)
+    {
+        var filters = new List<string>();
+        if (q.Contains("контрол") || q.Contains("на контрол"))
+            filters.Add("IsUnderControl eq true");
+        if (q.Contains("просрочен"))
+            filters.Add($"Status eq 'InProcess' and Deadline lt {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}");
+        else
+            filters.Add("Status eq 'InProcess'");
+
+        var filter = string.Join(" and ", filters);
+        var json = await _client.GetAsync("IActionItemExecutionTasks", filter, "Id,Subject,MaxDeadline,Status",
+            "MaxDeadline asc", top, expand: "Assignee($select=Name),Author($select=Name)");
+
+        return FormatResults("Поручения", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var subj = item.TryGetProperty("Subject", out var s) ? s.GetString() ?? "" : "";
+            var assignee = item.TryGetProperty("Assignee", out var a) && a.ValueKind == JsonValueKind.Object
+                ? a.TryGetProperty("Name", out var an) ? an.GetString() ?? "" : "" : "";
+            var dl = item.TryGetProperty("MaxDeadline", out var d) && d.ValueKind == JsonValueKind.String
+                ? DateTime.TryParse(d.GetString(), out var dt) ? dt.ToString("dd.MM.yyyy") : "" : "";
+            return $"#{id} {subj}\n  Исполнитель: {assignee} | Срок: {dl}";
+        });
+    }
+
+    private async Task<string> SearchAbsences(string q, int top)
+    {
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var filter = $"AbsenceSince le {today}T23:59:59Z and AbsenceTill ge {today}T00:00:00Z";
+
+        try
+        {
+            var json = await _client.GetAsync("IAbsences", filter, "Id,AbsenceSince,AbsenceTill",
+                expand: "Employee($select=Name;$expand=Department($select=Name))", top: top);
+
+            return FormatResults("Отсутствующие сегодня", json, item =>
+            {
+                var emp = item.TryGetProperty("Employee", out var e) && e.ValueKind == JsonValueKind.Object
+                    ? e.TryGetProperty("Name", out var en) ? en.GetString() ?? "?" : "?" : "?";
+                var dept = "";
+                if (item.TryGetProperty("Employee", out var e2) && e2.TryGetProperty("Department", out var d) && d.ValueKind == JsonValueKind.Object)
+                    dept = d.TryGetProperty("Name", out var dn) ? dn.GetString() ?? "" : "";
+                var from = item.TryGetProperty("AbsenceSince", out var af) && af.ValueKind == JsonValueKind.String
+                    ? DateTime.TryParse(af.GetString(), out var fd) ? fd.ToString("dd.MM") : "" : "";
+                var to = item.TryGetProperty("AbsenceTill", out var at2) && at2.ValueKind == JsonValueKind.String
+                    ? DateTime.TryParse(at2.GetString(), out var td) ? td.ToString("dd.MM") : "" : "";
+                return $"{emp} ({dept})\n  {from} — {to}";
+            });
+        }
+        catch
+        {
+            return "Не удалось найти отсутствия. Попробуйте `absences` tool напрямую.";
+        }
+    }
+
+    private async Task<string> SearchMemos(string q, int top)
+    {
+        var filters = new List<string>();
+        var name = ExtractAfterKeywords(q, "про ", "о ", "на тему ");
+        if (name != null) filters.Add($"contains(Name, '{EscapeOData(name)}')");
+        var (dateFilters, _) = ExtractDateFilters(q, "Created");
+        filters.AddRange(dateFilters);
+
+        var filter = filters.Count > 0 ? string.Join(" and ", filters) : null;
+        var json = await _client.GetAsync("IMemos", filter, "Id,Name,Created,LifeCycleState",
+            "Created desc", top, expand: "Author($select=Name)");
+
+        return FormatResults("Служебные записки", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var n2 = item.TryGetProperty("Name", out var nn) ? nn.GetString() ?? "" : "";
+            var author = item.TryGetProperty("Author", out var a) && a.ValueKind == JsonValueKind.Object
+                ? a.TryGetProperty("Name", out var an) ? an.GetString() ?? "" : "" : "";
+            var created = item.TryGetProperty("Created", out var c) && c.ValueKind == JsonValueKind.String
+                ? DateTime.TryParse(c.GetString(), out var cd) ? cd.ToString("dd.MM.yyyy") : "" : "";
+            return $"#{id} {n2}\n  Автор: {author} | {created}";
+        });
+    }
+
+    private async Task<string> SearchIncomingLetters(string q, int top)
+    {
+        var filters = new List<string>();
+        var from = ExtractAfterKeywords(q, "от ", "из ", "от компании ");
+        if (from != null) filters.Add($"contains(Name, '{EscapeOData(from)}')");
+        var (dateFilters, _) = ExtractDateFilters(q, "Created");
+        filters.AddRange(dateFilters);
+
+        var filter = filters.Count > 0 ? string.Join(" and ", filters) : null;
+        var json = await _client.GetAsync("IIncomingLetters", filter, "Id,Name,Created,InNumber,Dated",
+            "Created desc", top, expand: "Correspondent($select=Name)");
+
+        return FormatResults("Входящие письма", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var n2 = item.TryGetProperty("Name", out var nn) ? nn.GetString() ?? "" : "";
+            var corr = item.TryGetProperty("Correspondent", out var c) && c.ValueKind == JsonValueKind.Object
+                ? c.TryGetProperty("Name", out var cn) ? cn.GetString() ?? "" : "" : "";
+            var inNum = item.TryGetProperty("InNumber", out var inum) ? inum.GetString() ?? "" : "";
+            return $"#{id} {n2}\n  От: {corr} | Вх.№: {inNum}";
+        });
+    }
+
+    private async Task<string> SearchOutgoingLetters(string q, int top)
+    {
+        var filters = new List<string>();
+        var (dateFilters, _) = ExtractDateFilters(q, "Created");
+        filters.AddRange(dateFilters);
+
+        var filter = filters.Count > 0 ? string.Join(" and ", filters) : null;
+        var json = await _client.GetAsync("IOutgoingLetters", filter, "Id,Name,Created",
+            "Created desc", top, expand: "Author($select=Name)");
+
+        return FormatResults("Исходящие письма", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var n2 = item.TryGetProperty("Name", out var nn) ? nn.GetString() ?? "" : "";
+            var author = item.TryGetProperty("Author", out var a) && a.ValueKind == JsonValueKind.Object
+                ? a.TryGetProperty("Name", out var an) ? an.GetString() ?? "" : "" : "";
+            return $"#{id} {n2}\n  Автор: {author}";
+        });
+    }
+
+    private async Task<string> SearchNotices(string q, int top)
+    {
+        var filter = "Status eq 'InProcess'";
+        var json = await _client.GetAsync("INotices", filter, "Id,Subject,Created",
+            "Created desc", top, expand: "Author($select=Name)");
+
+        return FormatResults("Уведомления", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var subj = item.TryGetProperty("Subject", out var s) ? s.GetString() ?? "" : "";
+            return $"#{id} {subj}";
+        });
+    }
+
+    private async Task<string> SearchBusinessUnits(string q, int top)
+    {
+        var filters = new List<string> { "Status eq 'Active'" };
+        var name = ExtractAfterKeywords(q, "наша ", "нор ");
+        if (name != null) filters.Add($"contains(Name, '{EscapeOData(name)}')");
+
+        var filter = string.Join(" and ", filters);
+        var json = await _client.GetAsync("IBusinessUnits", filter, "Id,Name,TIN,LegalName",
+            "Name asc", top);
+
+        return FormatResults("Наши организации (НОР)", json, item =>
+        {
+            var id = item.TryGetProperty("Id", out var i) ? i.GetInt64() : 0;
+            var n2 = item.TryGetProperty("Name", out var nn) ? nn.GetString() ?? "" : "";
+            var tin = item.TryGetProperty("TIN", out var t) ? t.GetString() ?? "" : "";
+            return $"#{id} {n2}" + (string.IsNullOrEmpty(tin) ? "" : $" (ИНН: {tin})");
+        });
+    }
+
+    private static string FormatResults(string title, JsonElement json, Func<JsonElement, string> formatter)
+    {
+        if (!json.TryGetProperty("value", out var values) || values.GetArrayLength() == 0)
+            return $"{title}: ничего не найдено.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"{title} ({values.GetArrayLength()}):");
+        sb.AppendLine();
+
+        int idx = 0;
+        foreach (var item in values.EnumerateArray())
+        {
+            idx++;
+            sb.AppendLine($"{idx}. {formatter(item)}");
+        }
+
+        return sb.ToString();
+    }
+
+    #endregion
+
     [GeneratedRegex(@"\b(за|в|на|последн\w*|текущ\w*|этой|этом|прошл\w*|сегодня|вчера|неделю?|месяц\w*|год\w*|январ\w*|феврал\w*|март\w*|апрел\w*|ма[йяе]\w*|июн\w*|июл\w*|август\w*|сентябр\w*|октябр\w*|ноябр\w*|декабр\w*)\b", RegexOptions.IgnoreCase)]
     private static partial Regex DateCleanupRegex();
 
@@ -694,6 +938,15 @@ public partial class NaturalSearchTool
         Tasks,
         Employees,
         Companies,
-        Departments
+        Departments,
+        // v2: +8 intents
+        Approvals,
+        ActionItems,
+        Absences,
+        Memos,
+        IncomingLetters,
+        OutgoingLetters,
+        Notices,
+        BusinessUnits
     }
 }
