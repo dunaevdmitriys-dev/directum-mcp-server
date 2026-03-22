@@ -96,6 +96,20 @@ public class PlatformKnowledgeBase
     [Description("Каталог UI-контролов, Remote Components, библиотек, FastReport шаблонов, Aspose для импорта/экспорта")]
     public static string GetUiCatalog() => UiCatalog;
 
+    // === v4.0 RESOURCES ===
+
+    [McpServerResource(UriTemplate = "directum://knowledge/crm-patterns", Name = "CRM Patterns", MimeType = "text/plain")]
+    [Description("Паттерны CRM-решения: Deal, Lead, Pipeline, BANT scoring, Round-robin, JSON serialization, GUID'ы сущностей")]
+    public static string GetCrmPatterns() => CrmPatterns;
+
+    [McpServerResource(UriTemplate = "directum://knowledge/esm-patterns", Name = "ESM Patterns", MimeType = "text/plain")]
+    [Description("Паттерны ESM/Service Desk: Email-to-Ticket, SLA 4 режима, матричная приоритизация, AIAgentTool, ExpressionElement, AsyncHandlers, Jobs")]
+    public static string GetEsmPatterns() => EsmPatterns;
+
+    [McpServerResource(UriTemplate = "directum://knowledge/targets-patterns", Name = "Targets Patterns", MimeType = "text/plain")]
+    [Description("Паттерны Targets/KPI: RemoteTableControl, Fan-out Async, Licensing, XLSX Pipeline, Word Processing, RC Components, WebAPI")]
+    public static string GetTargetsPatterns() => TargetsPatterns;
+
     // =====================================================================
     // CONTENT
     // =====================================================================
@@ -1236,6 +1250,62 @@ public class PlatformKnowledgeBase
         Сотрудник, Подразделение, Должность, Организация (наша), Контрагент,
         Контакт, Город, Страна, Валюта, Договор, Письмо, Приказ, Записка,
         Задача согласования, Поручение, Роль, Замещение
+
+        ---
+
+        ## SUNGERO.PROJECTS
+
+        ### Project — GUID: 4383f2ff-56e6-46f4-b4ef-cc17e6aeef40
+        Тип: Document | Модуль: Sungero.Projects (356e6500-45bc-482b-9791-189b5adedc28)
+        Свойства: TeamMembers(collection), Classifier(collection)
+        Когда использовать: управление проектами, портфели
+
+        ---
+
+        ## SUNGERO.MEETINGS
+
+        ### Meeting — GUID: dbc0dd63-4d23-4f41-92ae-cab59bb70c8c
+        Тип: Document | Модуль: Sungero.Meetings (593dcc11-15ee-49f2-b4ef-bf4cf7867055)
+        Actions: CreateOrShowAgenda, CreateOrShowMinutes, OpenActionItems, AddMember
+        Когда: совещания, планёрки. НЕ создавай свой тип "Встреча"
+
+        ### Agenda — GUID: 5261da93-7879-4210-b3db-c92fa894ab4d
+        Тип: Document | ConverterFunctions: GetMeetingDate, GetMeetingLocation, GetMeetingMembers
+
+        ### Minutes — GUID: bb4780ff-b2c3-4044-a390-e9e110791bf6
+        Тип: Document | Actions: CreateActionItems
+        Когда: протоколы совещаний. НЕ создавай свой тип
+
+        ---
+
+        ## SUNGERO.INTERNALPOLICIES
+
+        ### InternalPolicy — GUID: f421c353-d171-4422-8d81-ddb859d5a5f6
+        Тип: Document | Модуль: Sungero.InternalPolicies (48c9a380-db0e-47ca-ae0b-4015bbced723)
+        Когда: ЛНА, положения, регламенты. НЕ создавай свой тип
+
+        ---
+
+        ## SUNGERO.SMARTPROCESSING
+
+        ### VerificationTask — GUID: 999a5ae0-17ec-4735-bc90-d85c7fe08dd3
+        Тип: Task | Блоки: VerificationBlock(assignment), AnalyzeDocumentPackageSeparation(script)
+        Когда: интеллектуальная обработка, OCR проверка
+
+        ### BlobPackage — GUID: 1e9415ec-6ba8-46b5-b864-94b4385ffb52
+        Свойства: Name, SourceType(enum), PackageFolderPath, Blobs(collection)
+        Когда: массовый импорт документов
+
+        ---
+
+        ## SUNGERO.FINANCIALARCHIVE
+
+        ### ContractStatement — GUID: f2f5774d-5ca3-4725-b31d-ac618f6b8850
+        Тип: Document | Actions: ShowDuplicates, CreateCoverLetter
+        Когда: финансовые акты, отчёты. НЕ создавай свой тип
+
+        ### UniversalTransferDocument — наследник финансового документа
+        Когда: УПД, электронные накладные
         """;
 
 
@@ -1687,6 +1757,496 @@ public class PlatformKnowledgeBase
             block.AddLabel("Статус: Активен");
             block.AddLabel("Просрочено: 3 задания");
             return stateView;
+        }
+        ```
+        """;
+
+    // === v4.0 CONTENT ===
+
+    private const string CrmPatterns = """
+        # CRM-паттерны Directum RX (из production DirRX.CRM v8)
+
+        ## Ключевые GUID сущностей
+        | Сущность | GUID | Модуль | Свойства |
+        |----------|------|--------|----------|
+        | Deal | a7f05f7d-19a3-4733-9432-1eb0ff68b56d | DirRX.CRMSales | 15 свойств, 6 actions |
+        | Lead | cbd3a9f3-0652-43f5-bd32-36f9ee498c85 | DirRX.CRMMarketing | 20+ свойств, BANT |
+        | Pipeline | dd530164-xxxx (префикс) | DirRX.CRMSales | Name, IsDefault, Stages(collection) |
+        | Stage | da93667b-xxxx (префикс) | DirRX.CRMSales | Name, Position, Color, WipLimit, IsFinal |
+
+        ## Pipeline Value формула
+        Стоимость воронки = сумма всех активных сделок (не на финальном этапе).
+        ```csharp
+        public static double GetPipelineValue(long pipelineId)
+        {
+            return Deals.GetAll()
+                .Where(d => d.Pipeline != null && d.Pipeline.Id == pipelineId)
+                .Where(d => d.Stage != null && d.Stage.IsFinal != true)
+                .Sum(d => d.Amount ?? 0);
+        }
+        ```
+
+        ## Round-robin Job (распределение лидов)
+        Фоновый процесс LeadAssignmentJob: берёт нераспределённых лидов и назначает менеджеров по кругу.
+        ```csharp
+        public virtual void ExecuteLeadAssignment()
+        {
+            var managers = Employees.GetAll()
+                .Where(e => e.Status == Status.Active && e.Department?.Name == "Продажи")
+                .ToList();
+            if (!managers.Any()) return;
+
+            var unassigned = Leads.GetAll(l => l.Manager == null).ToList();
+            for (int i = 0; i < unassigned.Count; i++)
+            {
+                unassigned[i].Manager = managers[i % managers.Count];
+                unassigned[i].Save();
+            }
+        }
+        ```
+
+        ## BANT Auto-Scoring
+        4 boolean-свойства: HasBudget, HasAuthority, HasNeed, HasTimeline.
+        Каждый true = +25 баллов, максимум 100.
+        Реализация через ChangedShared events на каждом свойстве.
+        ```csharp
+        // В LeadHandlers.cs (Shared)
+        public virtual void HasBudgetChangedShared(bool? newValue, bool? oldValue)
+        {
+            RecalculateBantScore(_obj);
+        }
+
+        public static void RecalculateBantScore(ILead lead)
+        {
+            int score = 0;
+            if (lead.HasBudget == true) score += 25;
+            if (lead.HasAuthority == true) score += 25;
+            if (lead.HasNeed == true) score += 25;
+            if (lead.HasTimeline == true) score += 25;
+            lead.BantScore = score;
+        }
+        ```
+
+        ## WIP Limit на Stage (ограничение количества сделок)
+        При перемещении сделки проверяем лимит целевого этапа.
+        ```csharp
+        // В DealHandlers.cs (Server) — BeforeSaveServer
+        public override void BeforeSaveServer(BeforeSaveEventArgs e)
+        {
+            if (_obj.State.Properties.Stage.IsChanged && _obj.Stage != null)
+            {
+                var wipLimit = _obj.Stage.WipLimit;
+                if (wipLimit.HasValue && wipLimit.Value > 0)
+                {
+                    var currentCount = Deals.GetAll()
+                        .Count(d => d.Stage != null && d.Stage.Id == _obj.Stage.Id && d.Id != _obj.Id);
+                    if (currentCount >= wipLimit.Value)
+                        e.AddError("Превышен лимит WIP для этапа: " + _obj.Stage.Name);
+                }
+            }
+        }
+        ```
+
+        ## JSON Serialization без Newtonsoft
+        Ручная сериализация через StringBuilder. Имена свойств ОБЯЗАНЫ совпадать со структурами.
+        ```csharp
+        public static string DealToJson(IDeal deal)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{");
+            sb.AppendFormat("\"Id\":{0}", deal.Id);
+            sb.AppendFormat(",\"Name\":\"{0}\"", EscapeJson(deal.Name));
+            sb.AppendFormat(",\"Amount\":{0}", deal.Amount?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "null");
+            sb.AppendFormat(",\"Stage\":\"{0}\"", EscapeJson(deal.Stage?.Name));
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        private static string EscapeJson(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+                    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        }
+        ```
+
+        ## Модульная архитектура CRM (5 модулей)
+        ```
+        DirRX.CRM (фасад: обложка, виджеты, Jobs)
+          ├── DirRX.CRMSales (Deal, Pipeline, Stage, Activity)
+          ├── DirRX.CRMMarketing (Lead, BANT, Campaign)
+          ├── DirRX.CRMDocuments (перекрытие ContractualDocument)
+          └── DirRX.CRMCommon (LossReason, Product, общие справочники)
+        ```
+        Модули НЕ знают друг о друге. Связь через PublicFunctions фасада DirRX.CRM.
+        """;
+
+    private const string EsmPatterns = """
+        # ESM-паттерны Directum RX (из production rosa.ESM)
+
+        ## Ключевой GUID
+        | Сущность | GUID | Описание |
+        |----------|------|----------|
+        | RequestDatabook | 7d1c17bc-xxxx (префикс) | Обращение (основная сущность ESM) |
+
+        ## Email-to-Ticket (DCS интеграция)
+        Полный поток обработки входящего email:
+        1. DCS (Document Capture Service) получает JSON-пакет с email
+        2. AsyncHandler парсит тему: regex `\[Request#(\d{6})\]`
+        3. Если номер найден → обновление существующего тикета (добавление комментария)
+        4. Если номер НЕ найден → создание нового тикета
+        5. Вложения → прикрепляются как файлы к документу
+        6. Уведомление ответственному через Notice
+
+        ```csharp
+        // AsyncHandler: ProcessIncomingEmail
+        public virtual void ProcessIncomingEmail(AsyncHandlerInvokeArgs args)
+        {
+            var packageId = args.PackageId;
+            var package = BlobPackages.Get(packageId);
+            var subject = package.Subject;
+
+            // Поиск номера тикета в теме
+            var match = System.Text.RegularExpressions.Regex.Match(
+                subject, @"\[Request#(\d{6})\]");
+
+            if (match.Success)
+            {
+                var ticketNumber = match.Groups[1].Value;
+                var ticket = Requests.GetAll(r => r.RegistrationNumber == ticketNumber).FirstOrDefault();
+                if (ticket != null)
+                {
+                    // Добавить комментарий
+                    AddCommentFromEmail(ticket, package.Body);
+                    AttachFiles(ticket, package.Blobs);
+                    return;
+                }
+            }
+
+            // Создать новый тикет
+            var newTicket = Requests.Create();
+            newTicket.Subject = subject;
+            newTicket.Description = package.Body;
+            newTicket.Save();
+            AttachFiles(newTicket, package.Blobs);
+        }
+        ```
+
+        ## SLA — 4 режима расчёта времени
+        | Режим | Описание | Источник календаря |
+        |-------|----------|-------------------|
+        | User | Личный рабочий календарь сотрудника | Employee.Calendar |
+        | Group | Календарь подразделения | Department.Calendar |
+        | BusinessUnit | Календарь НОР | BusinessUnit.Calendar |
+        | Overtime | 24/7 без выходных | null (простая разница дат) |
+
+        Формула:
+        ```csharp
+        public static double GetSolvationTime(IRequest request)
+        {
+            var calendar = GetCalendarByMode(request.SlaMode);
+            if (calendar == null)
+            {
+                // Режим Overtime (24/7)
+                return (request.ClosingDate.Value - request.RegistrationDate.Value).TotalHours;
+            }
+            return WorkingTime.GetDurationInWorkingHours(
+                request.RegistrationDate.Value,
+                request.ClosingDate.Value,
+                calendar);
+        }
+        ```
+
+        ## Матричная приоритизация (Urgency x Influence)
+        Двумерная матрица: Urgency (строки) x Influence (столбцы) → Priority.
+        ```
+        |            | Low    | Medium | High     | Critical |
+        |------------|--------|--------|----------|----------|
+        | Low        | Low    | Low    | Medium   | Medium   |
+        | Medium     | Low    | Medium | High     | High     |
+        | High       | Medium | High   | Critical | Critical |
+        | Critical   | Medium | High   | Critical | Critical |
+        ```
+        Реализация: DatabookEntry "PriorityMatrix" с 3 свойствами: Urgency(enum), Influence(enum), Priority(enum).
+        Поиск: `PriorityMatrices.GetAll(m => m.Urgency == urgency && m.Influence == influence).FirstOrDefault()?.Priority`
+
+        ## AIAgentTool — саморегистрация инструментов
+        Для каждой услуги (Service) создаётся AI-инструмент.
+        AsyncHandler: CreateRequestFromTool
+        ```csharp
+        // Параметры: ToolCallId(string), InputJson(string)
+        public virtual void CreateRequestFromTool(AsyncHandlerInvokeArgs args)
+        {
+            var toolCallId = args.ToolCallId;
+            var inputJson = args.InputJson;
+
+            // Десериализация входных данных
+            var input = ParseToolInput(inputJson);
+
+            // Создание обращения
+            var request = Requests.Create();
+            request.Subject = input.Subject;
+            request.Service = Services.Get(input.ServiceId);
+            request.Priority = CalculatePriority(request.Service);
+            request.Save();
+
+            // Возврат результата AI-агенту
+            SetToolResult(toolCallId, request.Id.ToString());
+        }
+        ```
+
+        ## ExpressionElement — 5 типов функций для workflow
+        | Тип | Назначение | Пример |
+        |-----|-----------|--------|
+        | GetFilteredEntities | Фильтрация сущностей для выбора | Список ответственных по услуге |
+        | GetPredefinedValues | Предзаполненные значения | SLA-параметры по категории |
+        | GetDisplayName | Отображаемое имя | Формат "Request#000001: Тема" |
+        | Validate | Валидация перед переходом | Проверка заполненности полей |
+        | Calculate | Вычисление значений | Автоматическая приоритизация |
+
+        ## AsyncHandlers ESM (14 обработчиков)
+        | Name | Delay | Strategy | MaxRetry | Назначение |
+        |------|-------|----------|----------|-----------|
+        | ProcessIncomingEmail | 5 | Regular | 3 | Обработка входящего email |
+        | EscalateOverdue | 15 | Exponential | 5 | Эскалация просроченных |
+        | NotifyResponsible | 1 | Regular | 3 | Уведомление ответственного |
+        | UpdateSlaMetrics | 10 | Regular | 3 | Пересчёт SLA-метрик |
+        | SyncCmdbRelations | 30 | Exponential | 5 | Синхронизация CMDB |
+        | CreateRequestFromTool | 1 | Regular | 3 | AI Agent Tool |
+        | ProcessAutoReply | 5 | Regular | 3 | Автоответ по шаблону |
+        | CloseInactiveRequests | 60 | Regular | 1 | Закрытие неактивных |
+        | RecalculatePriority | 1 | Regular | 3 | Пересчёт приоритета |
+        | SendSatisfactionSurvey | 5 | Regular | 3 | Опрос удовлетворённости |
+        | ImportFromExternalSystem | 30 | Exponential | 5 | Импорт из внешней системы |
+        | GenerateReport | 15 | Regular | 3 | Генерация отчёта |
+        | ArchiveResolved | 60 | Regular | 1 | Архивация решённых |
+        | SyncKnowledgeBase | 30 | Exponential | 5 | Синхронизация базы знаний |
+
+        ## Jobs ESM (5 фоновых процессов)
+        | Name | График | Цель |
+        |------|--------|------|
+        | EscalationJob | Каждые 15 мин | Проверка SLA и эскалация |
+        | AutoCloseJob | Ежедневно 02:00 | Закрытие неактивных тикетов |
+        | SlaReportJob | Еженедельно Пн 08:00 | Генерация SLA-отчёта |
+        | CmdbSyncJob | Каждые 30 мин | Синхронизация CMDB |
+        | KnowledgeBaseSync | Ежедневно 03:00 | Обновление базы знаний |
+        """;
+
+    private const string TargetsPatterns = """
+        # Targets/KPI-паттерны Directum RX (из production DirRX.Targets)
+
+        ## RemoteTableControl (AG Grid + CRUD + ChangeTracking)
+        Компонент для inline-редактирования таблицы KPI в карточке сущности.
+        Протокол ChangeTracking: клиент отправляет массив изменений с метаданными.
+        ```json
+        // Формат изменённой строки
+        {
+            "Id": 42,
+            "Name": "KPI-001",
+            "Value": 85.5,
+            "_ChangedColumns": ["Value"],
+            "_ChangedFrom": {"Value": 80.0},
+            "_ChangeType": "update"
+        }
+        ```
+        _ChangeType: "insert" | "update" | "delete"
+        _ChangedColumns: массив имён изменённых колонок
+        _ChangedFrom: предыдущие значения (для undo/audit)
+
+        Серверный WebAPI для TableControl:
+        ```csharp
+        // GET: Метаданные таблицы (колонки, типы, права)
+        [Public(WebApiRequestType = RequestType.Get)]
+        public virtual string GetTableMetadata(long entityId)
+        {
+            var entity = Entities.Get(entityId);
+            // Возвращает JSON с описанием колонок, типов, editability
+            return BuildTableMetadataJson(entity);
+        }
+
+        // POST: Пакетное обновление строк
+        [Public(WebApiRequestType = RequestType.Post)]
+        public virtual string BatchUpdate(string jsonInput)
+        {
+            var changes = ParseChanges(jsonInput);
+            foreach (var change in changes)
+            {
+                switch (change.ChangeType)
+                {
+                    case "insert": CreateRow(change); break;
+                    case "update": UpdateRow(change); break;
+                    case "delete": DeleteRow(change); break;
+                }
+            }
+            return "{\"status\":\"ok\"}";
+        }
+        ```
+
+        ## Fan-out Async (Master → N Executors)
+        Паттерн: Master AsyncHandler создаёт N дочерних Executor AsyncHandler'ов.
+        Используется для параллельной обработки (например, рассылка по N подразделениям).
+        ```csharp
+        // Master handler
+        public virtual void DistributeTargets(AsyncHandlerInvokeArgs args)
+        {
+            var periodId = args.PeriodId;
+            var departments = Departments.GetAll().Where(d => d.Status == Status.Active).ToList();
+
+            foreach (var dept in departments)
+            {
+                // Создание дочернего handler для каждого подразделения
+                var asyncHandler = AsyncHandlerInvokeArgs.Create(
+                    Constants.Module.ExecuteTargetCalculation);
+                asyncHandler.PeriodId = periodId;
+                asyncHandler.DepartmentId = dept.Id;
+                asyncHandler.ExecuteAsync();
+            }
+        }
+
+        // Executor handler (для одного подразделения)
+        public virtual void ExecuteTargetCalculation(AsyncHandlerInvokeArgs args)
+        {
+            var periodId = args.PeriodId;
+            var departmentId = args.DepartmentId;
+            // Расчёт KPI для конкретного подразделения...
+        }
+        ```
+
+        ## Licensing через пустой модуль
+        Паттерн проверки лицензии: создаётся пустой модуль с IsLicensed=true.
+        ```csharp
+        public static bool IsModuleLicensed()
+        {
+            try
+            {
+                // Попытка обратиться к лицензируемому модулю
+                var dummy = DirRX.TargetsPremium.PublicFunctions.Module.Remote.CheckLicense();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        ```
+        В Module.mtd лицензируемого модуля: `"IsLicensed": true`
+
+        ## XLSX Pipeline (6 шагов массового импорта)
+        ```
+        1. Template    → Скачивание шаблона XLSX с заголовками
+        2. Parse       → IsolatedFunction парсит XLSX через ExcelDataReader
+        3. Validate    → Проверка типов, обязательных полей, ссылок
+        4. Report      → Генерация отчёта об ошибках (если есть)
+        5. Import      → Создание/обновление сущностей через Server Functions
+        6. Cleanup     → Удаление временных файлов, AsyncHandler cleanup
+        ```
+        ```csharp
+        // Isolated Function (парсинг XLSX)
+        [Public]
+        public virtual List<Structures.Module.ImportRow> ParseXlsxFile(byte[] fileBytes)
+        {
+            var result = new List<Structures.Module.ImportRow>();
+            using (var stream = new MemoryStream(fileBytes))
+            using (var reader = ExcelReaderFactory.CreateReader(stream))
+            {
+                var dataSet = reader.AsDataSet();
+                var sheet = dataSet.Tables[0];
+                for (int row = 1; row < sheet.Rows.Count; row++)
+                {
+                    result.Add(new Structures.Module.ImportRow
+                    {
+                        Name = sheet.Rows[row][0]?.ToString(),
+                        Value = Convert.ToDouble(sheet.Rows[row][1]),
+                        DepartmentName = sheet.Rows[row][2]?.ToString()
+                    });
+                }
+            }
+            return result;
+        }
+        ```
+
+        ## Word Processing (Aspose.Words в Isolated)
+        Генерация документов Word по шаблону.
+        ```csharp
+        // Isolated Function
+        public virtual byte[] GenerateTargetsMap(byte[] templateBytes, string jsonData)
+        {
+            var doc = new Aspose.Words.Document(new MemoryStream(templateBytes));
+
+            // Удаление якорных тегов {{TAG}}
+            RemoveAnchorTags(doc, "{{START}}", "{{END}}");
+
+            // Заполнение таблиц
+            ProcessTables(doc, jsonData);
+
+            // Настройка полей
+            SetMargins(doc, 1.0, 1.0, 1.5, 1.5); // top, bottom, left, right (cm)
+
+            using (var output = new MemoryStream())
+            {
+                doc.Save(output, Aspose.Words.SaveFormat.Docx);
+                return output.ToArray();
+            }
+        }
+        ```
+
+        ## 6 Remote Components (RC) в Targets
+        | Компонент | Технологии | Назначение |
+        |-----------|-----------|-----------|
+        | GoalsMap | React + D3.js | Карта целей (дерево с drag-and-drop) |
+        | TableControl | React + AG Grid | Таблица KPI с inline-редактированием |
+        | ChartsControl | React + Chart.js | Графики план/факт (bar, line, pie) |
+        | PeriodControl | React + DatePicker | Выбор периода (квартал, год) |
+        | RichMarkdownEditor | React + TipTap | Редактор описания цели |
+        | AnalyticsControl | React + Recharts | Аналитические дашборды |
+
+        ## Parametrized Widgets (виджеты с параметрами)
+        Виджеты могут принимать параметры для фильтрации.
+        ```json
+        // В Module.mtd → Widgets
+        {
+            "Name": "TargetsByPeriod",
+            "Parameters": [
+                {
+                    "Name": "Period",
+                    "ParameterType": "NavigationParameter",
+                    "EntityGuid": "<PeriodEntityGuid>"
+                },
+                {
+                    "Name": "ShowCompleted",
+                    "ParameterType": "Boolean"
+                },
+                {
+                    "Name": "ViewMode",
+                    "ParameterType": "Enum",
+                    "Values": ["Summary", "Detailed", "Chart"]
+                }
+            ]
+        }
+        ```
+
+        ## WebAPI для Remote Components
+        ```csharp
+        // GET: Метаданные для TableControl
+        [Public(WebApiRequestType = RequestType.Get)]
+        public virtual string GetTableMetadata(long targetId)
+        {
+            var target = Targets.Get(targetId);
+            return SerializeTableMetadata(target);
+        }
+
+        // POST: Пакетное обновление из TableControl
+        [Public(WebApiRequestType = RequestType.Post)]
+        public virtual string BatchUpdateKeyResults(string jsonInput)
+        {
+            var changes = ParseBatchChanges(jsonInput);
+            var results = new List<string>();
+            foreach (var change in changes)
+            {
+                ApplyChange(change);
+                results.Add(change.Id.ToString());
+            }
+            return SerializeResults(results);
         }
         ```
         """;
