@@ -2,7 +2,7 @@
 
 **Интеллектуальный ассистент разработки для платформы Directum RX** — MCP-сервер, который позволяет AI-агентам (Claude, Copilot, GigaChat) проектировать решения, генерировать код, валидировать пакеты и управлять задачами через стандартный протокол [Model Context Protocol](https://modelcontextprotocol.io/).
 
-> Первый MCP-сервер для российской ECM/BPM платформы. 89 инструментов. 31 ресурс knowledge base. 619 тестов.
+> Первый MCP-сервер для российской ECM/BPM платформы. 99 инструментов. 34 ресурса knowledge base. 584 теста.
 
 ---
 
@@ -10,18 +10,18 @@
 
 | Компонент | Количество |
 |-----------|:----------:|
-| Tools (DevTools) | 64 |
-| Tools (RuntimeTools) | 25 |
-| **Tools всего** | **89** |
-| Resources (статические) | 24 |
-| Resources (динамические) | 3 |
-| Resources (RuntimeTools) | 4 |
-| **Resources всего** | **31** |
-| Prompts (DevTools) | 8 |
-| Prompts (RuntimeTools) | 4 |
-| **Prompts всего** | **12** |
-| Unit-тесты | 619 |
-| Строк кода | ~42 000 |
+| Tools (DevTools) | 66 |
+| Tools (RuntimeTools) | 33 |
+| **Tools всего** | **99** |
+| Resources (статические) | 25 |
+| Resources (динамические) | 4 |
+| Resources (RuntimeTools) | 5 |
+| **Resources всего** | **34** |
+| Prompts (DevTools) | 9 |
+| Prompts (RuntimeTools) | 5 |
+| **Prompts всего** | **14** |
+| Unit-тесты | 584 |
+| Строк кода | ~45 000 |
 
 ---
 
@@ -36,7 +36,7 @@
 ### Сборка
 
 ```bash
-git clone https://github.com/your-org/directum-mcp-server.git
+git clone https://github.com/dunaevdmitriys-dev/directum-mcp-server.git
 cd directum-mcp-server
 dotnet build
 ```
@@ -84,7 +84,7 @@ dotnet build
 
 ---
 
-## DevTools — 64 инструмента разработки
+## DevTools — 66 инструментов разработки
 
 Работают с файловой системой: читают и анализируют `.mtd`, `.resx`, `.dat`, `.cs`, `.frx` файлы. Не требуют запущенного стенда.
 
@@ -179,7 +179,7 @@ dotnet build
 
 ---
 
-## RuntimeTools — 25 инструментов работы со стендом
+## RuntimeTools — 33 инструмента работы со стендом
 
 Работают с живым стендом Directum RX через OData v4 API. Требуют переменных окружения `RX_ODATA_URL`, `RX_USERNAME`.
 
@@ -230,7 +230,7 @@ dotnet build
 
 ---
 
-## Resources — 31 ресурс Knowledge Base
+## Resources — 34 ресурса Knowledge Base
 
 ### DevTools: статические ресурсы (24)
 
@@ -282,9 +282,9 @@ dotnet build
 
 ---
 
-## Prompts — 12 интерактивных сценариев
+## Prompts — 14 интерактивных сценариев
 
-### DevTools (8)
+### DevTools (9)
 
 | Prompt | Описание |
 |--------|----------|
@@ -297,7 +297,7 @@ dotnet build
 | `diagnose-error` | Диагностика ошибки DDS: pattern-matching + auto-fix |
 | `override-entity` | Перекрыть существующую сущность: добавить свойства, действия |
 
-### RuntimeTools (4)
+### RuntimeTools (5)
 
 | Prompt | Описание |
 |--------|----------|
@@ -305,6 +305,7 @@ dotnet build
 | `investigate-overdue` | Расследование просрочек: причины, ответственные, рекомендации |
 | `process-documents` | Найти и обработать документы: поиск, реестр, массовые действия |
 | `quick-dashboard` | Быстрый дашборд: ключевые метрики за сегодня/неделю |
+| `daily-briefing` | Ежедневная сводка: задания, документы, дедлайны |
 
 ---
 
@@ -314,18 +315,18 @@ dotnet build
                                     ┌───────────────────────────────────────────┐
                                ┌───>│  DirectumMcp.DevTools (stdio)             │
                                │    │                                           │
-┌──────────────────────┐       │    │  64 инструмента разработчика              │
-│                      │       │    │  24 ресурса Knowledge Base + 3 динамич.   │
-│  Claude Code         ├───────┘    │  8 промптов                               │
+┌──────────────────────┐       │    │  66 инструментов разработчика              │
+│                      │       │    │  25 ресурсов Knowledge Base + 4 динамич.   │
+│  Claude Code         ├───────┘    │  9 промптов                               │
 │  Claude Desktop      │            │  (файловая система: .mtd, .resx, .dat)    │
 │  VS Code (Copilot)   │            └───────────────────────────────────────────┘
 │  Любой MCP-клиент    │
 │                      │            ┌───────────────────────────────────────────┐
 │                      ├───────────>│  DirectumMcp.RuntimeTools (stdio)         │
 │                      │            │                                           │
-└──────────────────────┘            │  25 инструментов работы со стендом        │
-                                    │  4 ресурса Knowledge Base                 │
-                                    │  4 промпта                                │
+└──────────────────────┘            │  33 инструмента работы со стендом        │
+                                    │  5 ресурсов Knowledge Base                │
+                                    │  5 промптов                               │
                                     └───────────┬───────────────────────────────┘
                                                 │
                                           OData v4 / HTTP Basic Auth
@@ -357,23 +358,23 @@ directum-mcp-server/
 │   │   └── OData/                         — DirectumODataClient
 │   │
 │   ├── DirectumMcp.DevTools/              — MCP-сервер разработчика (stdio)
-│   │   ├── Tools/                         — 64 инструмента
-│   │   ├── Resources/                     — PlatformKnowledgeBase (24) + DynamicResources (3)
-│   │   └── Prompts/                       — 8 промптов
+│   │   ├── Tools/                         — 66 инструментов
+│   │   ├── Resources/                     — PlatformKnowledgeBase (25) + DynamicResources (4)
+│   │   └── Prompts/                       — 9 промптов
 │   │
 │   ├── DirectumMcp.RuntimeTools/          — MCP-сервер рантайма (stdio -> OData)
-│   │   ├── Tools/                         — 25 инструментов
-│   │   ├── Resources/                     — RuntimeKnowledgeBase (4)
-│   │   └── Prompts/                       — 4 промпта
+│   │   ├── Tools/                         — 33 инструмента
+│   │   ├── Resources/                     — RuntimeKnowledgeBase (5)
+│   │   └── Prompts/                       — 5 промптов
 │   │
-│   └── DirectumMcp.Tests/                — 619 unit-тестов (xUnit)
+│   └── DirectumMcp.Tests/                — 584 unit-теста (xUnit)
 ```
 
 ### Ключевые паттерны
 
 - **Services Layer** — каждый tool делегирует в Service с типизированным Request/Result. Сервисы реализуют `IPipelineStep` для использования в оркестраторе `pipeline`.
 - **Pipeline** — `PipelineExecutor` выполняет цепочку шагов последовательно с передачей контекста через `PlaceholderResolver` (`$prev.field`, `$steps[0].field`).
-- **Knowledge Base** — 31 ресурс, покрывающий 30 платформенных модулей, 30+ сущностей, 50+ паттернов из 4 production-решений.
+- **Knowledge Base** — 34 ресурса, покрывающих 30 платформенных модулей, 30+ сущностей, 50+ паттернов из 4 production-решений.
 - **PathGuard** — ограничение доступа к файловой системе в пределах `SOLUTION_PATH`.
 
 ---
@@ -407,11 +408,11 @@ directum-mcp-server/
 ## Тестирование
 
 ```bash
-dotnet test src/DirectumMcp.Tests/     # 619 тестов
+dotnet test src/DirectumMcp.Tests/     # 584 теста
 dotnet build                           # сборка всего решения
 ```
 
-619 тестов покрывают:
+584 теста покрывают:
 - Парсинг MTD и resx файлов
 - Все 14 проверок валидации пакетов
 - OData-клиент и формирование запросов
