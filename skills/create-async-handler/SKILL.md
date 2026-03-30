@@ -27,78 +27,6 @@ MCP: search_metadata query=AsyncHandlers scope=modules
 Read CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Server/ModuleAsyncHandlers.cs
 ```
 
-## Production паттерны (Targets — 13 AsyncHandlers)
-
-> Reference: `targets/CODE_PATTERNS_CATALOG.md` секция 3
-
-### Паттерн 1: Отложенный retry (NextRetryTime)
-```csharp
-// Файл проверяется раз в 12 часов, пока не будет удалён
-public virtual void DeleteCheckFile(/* params */)
-{
-  var checkFile = DirRX.KPI.CheckFiles.GetAll(f => f.Id == checkFileId).FirstOrDefault();
-  if (checkFile == null) return; // удалён — OK
-  args.NextRetryTime = Calendar.Now.AddHours(12); // retry через 12ч
-  args.Retry = true;
-}
-```
-
-### Паттерн 2: Batch с Lock/Unlock
-```csharp
-// Обработка порциями по 100 с блокировкой
-public virtual void ImportActualValuesInMetric(/* params */)
-{
-  var processLimit = 100;
-  var entities = GetUnprocessed().Take(processLimit);
-  foreach (var entity in entities)
-  {
-    if (!Locks.TryLock(entity)) continue;
-    try { Process(entity); entity.Save(); }
-    finally { Locks.Unlock(entity); }
-  }
-  args.Retry = GetUnprocessed().Any(); // повторить если остались
-}
-```
-
-### Паттерн 3: Fan-out (родитель → дочерние АО)
-```csharp
-// Родительский АО запускает дочерние для каждого элемента
-public virtual void ConvertTargetsMapsDates(/* params */)
-{
-  var maps = DirRX.Targets.TargetsMaps.GetAll().Where(/* ... */);
-  foreach (var map in maps)
-    AsyncHandlerInvokeProxy.ExecutorConvertTargetsMapsDates(map.Id);
-}
-```
-
-### Паттерн 4: Bounded retry
-```csharp
-args.Retry = args.RetryIteration < args.MaxRetryCount;
-```
-
-### Паттерн 5: RepeatedLockException (log only)
-```csharp
-catch (Sungero.Domain.Shared.Exceptions.RepeatedLockException ex)
-{
-  Logger.ErrorFormat("...", ex); // НЕ retry — просто лог
-}
-```
-
-### Паттерн 6: Named Logger
-```csharp
-var logger = Logger.WithLogger(DTCommons.PublicConstants.Module.LoggerPostfix);
-logger.DebugFormat("AsyncHandler started: {0}", nameof(this.MyHandler));
-```
-
-### MTD: ExponentialDelayStrategy
-```json
-{
-  "$type": "Sungero.Metadata.AsyncHandlerMetadata",
-  "DelayPeriod": 15,
-  "DelayStrategy": "ExponentialDelayStrategy"
-}
-```
-
 ## Входные данные
 Спроси у пользователя (если не указано):
 - **CompanyCode** — код компании
@@ -119,6 +47,8 @@ logger.DebugFormat("AsyncHandler started: {0}", nameof(this.MyHandler));
 ## Что создаётся / обновляется
 
 ### 1. Module.mtd — секция AsyncHandlers
+
+Схема AsyncHandler в MTD содержит **только** эти поля:
 
 ```json
 {
@@ -142,11 +72,14 @@ logger.DebugFormat("AsyncHandler started: {0}", nameof(this.MyHandler));
 }
 ```
 
-> **Примечание:** Поле `MaxRetryCount` НЕ используется в реальных CRM-модулях. Retry управляется через `args.Retry` в коде обработчика.
+> **ВАЖНО:** Поля `MaxRetryCount` в DDS-схеме AsyncHandler **НЕ СУЩЕСТВУЕТ**.
+> Retry-логика управляется ТОЛЬКО через код (`args.Retry`, `args.RetryIteration`, `args.NextRetryTime`).
 
-**Стратегии задержки:**
+**Стратегии задержки (DelayStrategy):**
 - `RegularDelayStrategy` — фиксированная задержка (для простых операций)
 - `ExponentialDelayStrategy` — экспоненциальная (для внешних API, блокировок)
+
+**DelayPeriod** — начальная задержка в секундах перед retry.
 
 ### 2. ModuleAsyncHandlers.cs — обработчик
 
@@ -164,21 +97,21 @@ namespace {Company}.{Module}.Server
     public virtual void ProcessDocumentAsync(
       {Company}.{Module}.Server.AsyncHandlerInvokeArgs.ProcessDocumentAsyncInvokeArgs args)
     {
-      Logger.DebugFormat("{0}. Start. documentId={1}, actionType={2}",
+      var logger = Logger.WithLogger("{Company}.{Module}");
+      logger.DebugFormat("{0}. Start. documentId={1}, actionType={2}",
         nameof(ProcessDocumentAsync), args.documentId, args.actionType);
 
       var document = Sungero.Docflow.OfficialDocuments.GetAll(d => d.Id == args.documentId).FirstOrDefault();
       if (document == null)
       {
-        Logger.DebugFormat("{0}. Document not found, id={1}",
+        logger.DebugFormat("{0}. Document not found, id={1}",
           nameof(ProcessDocumentAsync), args.documentId);
-        args.Retry = false;
-        return;
+        return; // не найден — не повторять
       }
 
       if (Locks.GetLockInfo(document).IsLocked)
       {
-        Logger.DebugFormat("{0}. Document locked, id={1}. Retry.",
+        logger.DebugFormat("{0}. Document locked, id={1}. Retry.",
           nameof(ProcessDocumentAsync), args.documentId);
         args.Retry = true;
         return;
@@ -188,11 +121,11 @@ namespace {Company}.{Module}.Server
       {
         // Бизнес-логика
         document.Save();
-        Logger.DebugFormat("{0}. Done. documentId={1}", nameof(ProcessDocumentAsync), args.documentId);
+        logger.DebugFormat("{0}. Done. documentId={1}", nameof(ProcessDocumentAsync), args.documentId);
       }
       catch (Exception ex)
       {
-        Logger.ErrorFormat("{0}. Error: {1}", nameof(ProcessDocumentAsync), ex.Message);
+        logger.ErrorFormat("{0}. Error: {1}", nameof(ProcessDocumentAsync), ex.Message);
         args.Retry = true;
       }
     }
@@ -210,29 +143,121 @@ async.actionType = "approve";
 async.ExecuteAsync();
 ```
 
-## Паттерны из ESM (production)
+## Retry-паттерны (ВСЕ — в коде, НЕ в MTD)
 
-### Retry-стратегия
+### Паттерн 1: Простой retry
 ```csharp
-// Не найден объект → НЕ повторять
-if (entity == null) { args.Retry = false; return; }
-
-// Заблокирован → повторить
-if (Locks.GetLockInfo(entity).IsLocked) { args.Retry = true; return; }
-
-// Ошибка → повторить (если MaxRetryCount не исчерпан)
-catch (Exception ex) { args.Retry = true; }
+// Объект заблокирован или временная ошибка — повторить
+args.Retry = true;
 ```
 
-### Логирование
+### Паттерн 2: Bounded retry (ограничение числа попыток)
 ```csharp
-// Формат: "{MethodName}. {Action}. {Params}"
-Logger.DebugFormat("{0}. Start. id={1}", nameof(HandlerName), args.entityId);
-Logger.DebugFormat("{0}. End. Success.", nameof(HandlerName));
-Logger.ErrorFormat("{0}. Error: {1}", nameof(HandlerName), ex.Message);
+// Ограничение попыток — через args.RetryIteration В КОДЕ, не через MTD
+if (args.RetryIteration < 5)
+{
+    args.Retry = true;
+    return;
+}
+// Исчерпали попытки — логируем и выходим
+Logger.ErrorFormat("{0}. Max retries reached ({1}). Giving up.",
+  nameof(MyHandler), args.RetryIteration);
 ```
 
-### Передача списка ID через строку
+### Паттерн 3: NextRetryTime (scheduler-aware, отложенный retry)
+```csharp
+// Повтор через определённый интервал (учитывает рабочий календарь)
+args.NextRetryTime = Calendar.Now.AddMinutes(5);
+args.Retry = true;
+
+// Targets example: проверка файла раз в 12 часов
+public virtual void DeleteCheckFile(/* params */)
+{
+  var checkFile = DirRX.KPI.CheckFiles.GetAll(f => f.Id == checkFileId).FirstOrDefault();
+  if (checkFile == null) return; // удалён — OK
+  args.NextRetryTime = Calendar.Now.AddHours(12);
+  args.Retry = true;
+}
+```
+
+### Паттерн 4: Lock-aware retry
+```csharp
+// Проверить блокировку перед обработкой
+if (Locks.GetLockInfo(entity).IsLocked)
+{
+    args.Retry = true;
+    return;
+}
+
+// Targets: batch с Lock/Unlock
+public virtual void ImportActualValuesInMetric(/* params */)
+{
+  var processLimit = 100;
+  var entities = GetUnprocessed().Take(processLimit);
+  foreach (var entity in entities)
+  {
+    if (!Locks.TryLock(entity)) continue;
+    try { Process(entity); entity.Save(); }
+    finally { Locks.Unlock(entity); }
+  }
+  args.Retry = GetUnprocessed().Any(); // повторить если остались
+}
+```
+
+### Паттерн 5: Fan-out (родитель порождает дочерние обработчики)
+```csharp
+// Родительский АО запускает дочерние для каждого элемента
+foreach (var item in items)
+{
+    var handler = AsyncHandlers.ProcessItem.Create();
+    handler.ItemId = item.Id;
+    handler.ExecuteAsync();
+}
+
+// Targets example:
+public virtual void ConvertTargetsMapsDates(/* params */)
+{
+  var maps = DirRX.Targets.TargetsMaps.GetAll().Where(/* ... */);
+  foreach (var map in maps)
+    AsyncHandlerInvokeProxy.ExecutorConvertTargetsMapsDates(map.Id);
+}
+```
+
+## Production паттерны (Targets — 13 AsyncHandlers)
+
+> Reference: `targets/CODE_PATTERNS_CATALOG.md` секция 3
+
+### Logger.WithLogger() — именованный логгер (Targets паттерн)
+```csharp
+// Targets используют именованный логгер через WithLogger()
+// Это выделяет логи конкретного модуля в отдельный поток
+var logger = Logger.WithLogger(DTCommons.PublicConstants.Module.LoggerPostfix);
+logger.DebugFormat("AsyncHandler started: {0}", nameof(this.MyHandler));
+
+// Формат логов: "{HandlerName}. {Action}. {Params}"
+logger.DebugFormat("{0}. Start. id={1}", nameof(HandlerName), args.entityId);
+logger.DebugFormat("{0}. End. Success.", nameof(HandlerName));
+logger.ErrorFormat("{0}. Error: {1}", nameof(HandlerName), ex.Message);
+```
+
+### RepeatedLockException (log only, без retry)
+```csharp
+catch (Sungero.Domain.Shared.Exceptions.RepeatedLockException ex)
+{
+  Logger.ErrorFormat("...", ex); // НЕ retry — просто лог
+}
+```
+
+### MTD: ExponentialDelayStrategy
+```json
+{
+  "$type": "Sungero.Metadata.AsyncHandlerMetadata",
+  "DelayPeriod": 15,
+  "DelayStrategy": "ExponentialDelayStrategy"
+}
+```
+
+## Передача списка ID через строку
 ```csharp
 // Вызов:
 async.documentIdsList = string.Join(";", documentList.Select(d => d.Id.ToString()));
@@ -265,7 +290,7 @@ MCP: sync_resx_keys packagePath={путь_к_пакету} dryRun=false
 
 1. Прочитай Module.mtd — найди секцию `AsyncHandlers`
 2. Сгенерируй GUID для обработчика и каждого параметра
-3. Добавь JSON-объект в `AsyncHandlers[]` в Module.mtd
+3. Добавь JSON-объект в `AsyncHandlers[]` в Module.mtd (только `NameGuid`, `Name`, `DelayPeriod`, `DelayStrategy`, `Parameters`)
 4. Добавь/обнови метод в `ModuleAsyncHandlers.cs`
 5. Покажи пользователю пример вызова из серверного кода
 

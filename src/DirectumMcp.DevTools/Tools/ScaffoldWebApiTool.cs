@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json.Nodes;
 using DirectumMcp.Core.Helpers;
 using DirectumMcp.Core.Services;
 using ModelContextProtocol.Server;
@@ -60,6 +61,9 @@ public class ScaffoldWebApiTool
             await File.WriteAllTextAsync(csPath, content);
         }
 
+        // Ensure CommonResponse PublicStructure exists in Module.mtd
+        var commonResponseAdded = await EnsureCommonResponseStructure(modulePath, moduleName);
+
         return $"""
             ## WebAPI endpoint создан
 
@@ -78,6 +82,7 @@ public class ScaffoldWebApiTool
             ### Созданные/изменённые файлы
             {string.Join("\n", result.CreatedFiles.Concat(result.ModifiedFiles).Select(f => $"- `{f}`"))}
             {(result.MtdUpdated ? "- `Module.mtd` — PublicFunctions" : "")}
+            {(commonResponseAdded ? "- `Module.mtd` — добавлена PublicStructure CommonResponse" : "")}
 
             ### Правила WebAPI
             - GET: только примитивные параметры (string, int, long, bool)
@@ -95,4 +100,64 @@ public class ScaffoldWebApiTool
         "bool" => "bool",
         _ => type
     };
+
+    /// <summary>
+    /// Добавляет PublicStructure CommonResponse в Module.mtd если её ещё нет.
+    /// Паттерн WebAPI: стандартная обёртка ответа {Success, Message, Data}.
+    /// </summary>
+    private static async Task<bool> EnsureCommonResponseStructure(string modulePath, string moduleName)
+    {
+        var mtdPath = Path.Combine(modulePath, $"{moduleName}.Shared", "Module.mtd");
+        if (!File.Exists(mtdPath))
+            return false;
+
+        var json = await File.ReadAllTextAsync(mtdPath);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+        if (node is not System.Text.Json.Nodes.JsonObject root)
+            return false;
+
+        var structures = root["PublicStructures"]?.AsArray();
+        if (structures == null)
+        {
+            structures = new System.Text.Json.Nodes.JsonArray();
+            root["PublicStructures"] = structures;
+        }
+
+        // Check if CommonResponse already exists
+        foreach (var s in structures)
+        {
+            if (s?["Name"]?.GetValue<string>() == "CommonResponse")
+                return false;
+        }
+
+        var structGuid = Guid.NewGuid().ToString("D");
+        var structure = System.Text.Json.Nodes.JsonNode.Parse($$"""
+        {
+          "NameGuid": "{{structGuid}}",
+          "Name": "CommonResponse",
+          "IsPublic": true,
+          "Properties": [
+            {
+              "Name": "Success",
+              "IsNullable": false,
+              "TypeFullName": "global::System.Boolean"
+            },
+            {
+              "Name": "Message",
+              "IsNullable": true,
+              "TypeFullName": "global::System.String"
+            },
+            {
+              "Name": "Data",
+              "IsNullable": true,
+              "TypeFullName": "global::System.String"
+            }
+          ]
+        }
+        """);
+
+        structures.Add(structure);
+        await File.WriteAllTextAsync(mtdPath, node.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return true;
+    }
 }

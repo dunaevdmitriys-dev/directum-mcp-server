@@ -44,7 +44,6 @@ public class ScaffoldAsyncHandlerTool
               "DelayPeriod": {{{delayPeriod}}},
               "DelayStrategy": "{{{strategy}}}",
               "IsHandlerGenerated": true,
-              "MaxRetryCount": 1000,
               "Parameters": [
             {{{paramsJson}}}  ]
             }

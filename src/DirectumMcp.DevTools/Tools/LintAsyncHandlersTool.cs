@@ -51,7 +51,6 @@ public class LintAsyncHandlersTool
                     var handlerName = handler.TryGetProperty("Name", out var hn) ? hn.GetString() ?? "?" : "?";
                     var delay = handler.TryGetProperty("DelayPeriod", out var dp) && dp.ValueKind == JsonValueKind.Number ? dp.GetInt32() : 0;
                     var strategy = handler.TryGetProperty("DelayStrategy", out var ds) ? ds.GetString() ?? "" : "";
-                    var maxRetry = handler.TryGetProperty("MaxRetryCount", out var mr) && mr.ValueKind == JsonValueKind.Number ? mr.GetInt32() : -1;
                     var isGenerated = handler.TryGetProperty("IsHandlerGenerated", out var ig) && ig.GetBoolean();
 
                     var paramCount = 0;
@@ -67,7 +66,7 @@ public class LintAsyncHandlersTool
                     }
 
                     sb.AppendLine($"### {handlerName}");
-                    sb.AppendLine($"Delay: {delay} мин | Strategy: {strategy} | MaxRetry: {(maxRetry >= 0 ? maxRetry.ToString() : "∞")} | Params: {paramCount}");
+                    sb.AppendLine($"Delay: {delay} мин | Strategy: {strategy} | Params: {paramCount}");
 
                     var handlerIssues = new List<string>();
 
@@ -75,13 +74,6 @@ public class LintAsyncHandlersTool
                     if (strategy.Contains("Exponential") && delay < 5)
                     {
                         handlerIssues.Add("WARN: ExponentialDelay с DelayPeriod < 5 мин — первый retry будет очень быстрым");
-                        issues++;
-                    }
-
-                    // Lint 2: Нет MaxRetryCount
-                    if (maxRetry < 0 || maxRetry > 10000)
-                    {
-                        handlerIssues.Add("WARN: MaxRetryCount не установлен или > 10000 — риск бесконечного retry");
                         issues++;
                     }
 

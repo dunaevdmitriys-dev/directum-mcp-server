@@ -721,7 +721,7 @@ public class ComponentTools
         var sb = new StringBuilder();
         sb.AppendLine($"        // Widget: {widgetName}");
         sb.AppendLine($"        public virtual IQueryable<Sungero.Domain.Shared.IEntity> {widgetName}ItemFiltering(");
-        sb.AppendLine("            IQueryable<Sungero.Domain.Shared.IEntity> query, Sungero.Domain.WidgetFilteringEventArgs e)");
+        sb.AppendLine("            IQueryable<Sungero.Domain.Shared.IEntity> query, Sungero.Domain.UiFilteringEventArgs e)");
         sb.AppendLine("        {");
         sb.AppendLine($"            // TODO: Добавьте фильтрацию для виджета {widgetName}");
         sb.AppendLine("            return query;");
@@ -733,8 +733,8 @@ public class ComponentTools
     {
         var sb = new StringBuilder();
         sb.AppendLine($"        // Widget chart: {widgetName}");
-        sb.AppendLine($"        public virtual List<Sungero.Core.WidgetChartValue> {widgetName}ChartGetValue(");
-        sb.AppendLine("            Sungero.Domain.WidgetGetValueEventArgs e)");
+        sb.AppendLine($"        public virtual List<Sungero.Core.WidgetChartValue> Get{widgetName}ChartValue(");
+        sb.AppendLine("            Sungero.Domain.GetWidgetBarChartValueEventArgs e)");
         sb.AppendLine("        {");
         sb.AppendLine("            var values = new List<Sungero.Core.WidgetChartValue>();");
         sb.AppendLine("            // TODO: Заполните данные диаграммы");

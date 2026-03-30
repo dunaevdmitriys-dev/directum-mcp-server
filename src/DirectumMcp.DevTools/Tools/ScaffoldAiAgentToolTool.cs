@@ -70,7 +70,6 @@ public class ScaffoldAiAgentToolTool
             ["DelayPeriod"] = 1,
             ["DelayStrategy"] = "RegularDelayStrategy",
             ["IsHandlerGenerated"] = true,
-            ["MaxRetryCount"] = 100,
             ["Parameters"] = paramsArray
         });
 

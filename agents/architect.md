@@ -198,6 +198,50 @@ ScriptBlock → NoticeBlock: уведомить
 - [ ] Test strategy покрывает все сценарии из sequence-diagrams
 - [ ] ADR обосновывают ключевые решения из domain-model
 
+## Критерии архитектурного качества (из Targets/Agile анализа)
+
+### Q1. Бизнес-логика внутри DDS (CRITICAL)
+Вся бизнес-логика ОБЯЗАНА находиться внутри DDS-модуля (Server Functions, Handlers, AsyncHandlers). Внешние API (CrmApiV3, MCP-сервер) — только тонкие прокси к DDS WebAPI. Если логика дублируется во внешнем API — это архитектурный дефект.
+
+### Q2. AsyncHandlers для фоновой обработки (HIGH)
+Тяжёлые операции (рассылки, агрегации, миграции) — ТОЛЬКО через AsyncHandler, НЕ синхронно в WebAPI или обработчиках сущностей. Паттерн: Saved handler триггерит AsyncHandler, WebAPI возвращает статус "в обработке".
+
+### Q3. IsolatedAreas для тяжёлых интеграций (HIGH)
+Работа с Word/PDF/Excel/внешними HTTP — ТОЛЬКО через IsolatedArea (отдельный процесс). Падение изолированной области не роняет основной сервер. Определяется в Module.mtd секция `IsolatedAreas`, код в `{Module}.Isolated/`.
+
+### Q4. PublicStructures для типизированных API (HIGH)
+Все данные между слоями (Server→Client, WebAPI→внешний мир) — через PublicStructure (определённые в Module.mtd). НЕ через `string`, `dynamic`, `Dictionary<string, object>`. DDS генерирует интерфейсы `IStructureName` и фабричные методы `Create()`.
+
+### Q5. ModuleQueries.xml для сложного SQL (MEDIUM)
+Сложные SQL-запросы (JOIN, подзапросы, агрегации) — в `ModuleQueries.xml`, НЕ inline строками в C#. Это даёт:
+- Подсветку синтаксиса SQL
+- Параметризацию через `@param`
+- Возможность оптимизации DBA без пересборки
+
+### Q6. Версионная инициализация (MEDIUM)
+ModuleInitializer ОБЯЗАН отслеживать версию модуля. При обновлении — идемпотентная миграция:
+```csharp
+if (currentVersion < targetVersion)
+{
+  // миграция
+  SetModuleVersion(targetVersion);
+}
+```
+Без этого повторная публикация ломает данные.
+
+### Q7. CSS-переменные платформы для RC (MEDIUM)
+Remote Components ОБЯЗАНЫ использовать CSS-переменные платформы (`--rndx-theme_*`) вместо хардкод-цветов. Это обеспечивает корректное отображение в тёмной теме и custom-брендинге.
+
+```css
+/* ПРАВИЛЬНО: */
+color: var(--rndx-theme_text-default);
+background: var(--rndx-theme_bg-default);
+
+/* НЕПРАВИЛЬНО: */
+color: #333;
+background: white;
+```
+
 ## Формат выхода
 Набор .md файлов в `{project_path}/.pipeline/02-design/`
 

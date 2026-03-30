@@ -78,8 +78,40 @@
 - Logger используется?
 - Строки через .resx?
 
+### 8. Production-чеклист (из Targets/Agile анализа)
+
+#### 8.1 Обработчики жизненного цикла (HIGH)
+- **BeforeDelete handler** — проверить наличие для сущностей с Navigation-ссылками на них. Без BeforeDelete каскадное удаление может сломать целостность данных. Паттерн: проверить зависимые записи, выбросить `AppliedCodeException` если есть связи.
+- **Filtering handler** — проверить наличие для сущностей с ограниченной видимостью (по отделу, роли, проекту). Без Filtering все пользователи видят все записи.
+
+#### 8.2 WebAPI возвраты (HIGH)
+- **Raw JSON в WebAPI** — проверить что `[Public(WebApiRequestType=...)]` функции НЕ возвращают `string` с ручным JSON. Должны использовать `PublicStructure` DTO (определённые в Module.mtd). Regex: `WebApiRequestType.*\]\s*public\s+string\s+`.
+
+#### 8.3 Логирование (MEDIUM)
+- **Logger без .WithLogger()** — все вызовы `Logger.Debug/Info/Error` должны быть через `Logger.WithLogger("ModuleName")`. Без контекста модуля невозможно фильтровать логи в production. Regex: `(?<!WithLogger\([^)]*\)\.)Logger\.(Debug|Info|Warn|Error)`.
+
+#### 8.4 Производительность (HIGH)
+- **`.ToList()` на больших коллекциях без предварительной фильтрации** — `GetAll().ToList()` или `GetAll().Select(...).ToList()` загружает ВСЮ таблицу в память. Должен быть `.Where()` ДО `.ToList()`. Regex: `GetAll\(\)\s*\.\s*(Select|ToList)`.
+
+#### 8.5 Локализация перечислений (MEDIUM)
+- **Enum display names в .resx** — каждое значение Enum-свойства из .mtd должно иметь ключ `Enum_<PropertyName>_<Value>` в System.resx и System.ru.resx. Пример: `Enum_Status_Active`, `Enum_Status_Closed`, `Enum_Priority_High`.
+- **AccusativeDisplayName** — для сущностей, используемых в задачах/заданиях, проверить наличие ключа `AccusativeDisplayName` в System.resx (используется в текстах заданий: "Выполните ... <AccusativeDisplayName>").
+
+#### 8.6 Версионирование инициализации (MEDIUM)
+- **ModuleVersionInit паттерн** — ModuleInitializer должен отслеживать версию модуля. Проверить наличие паттерна версионирования:
+```csharp
+// Правильно — идемпотентная инициализация с версией:
+var currentVersion = GetModuleVersion();
+if (currentVersion < new Version("1.2.0"))
+{
+  // Миграция данных для версии 1.2.0
+  InitializationLogger.Info("Updating to v1.2.0...");
+  SetModuleVersion("1.2.0");
+}
+```
+
 ## Scoring
-Score = 100 - (CRITICAL × 25) - (HIGH × 10) - (MEDIUM × 3) - (LOW × 1)
+Score = 100 - (CRITICAL x 25) - (HIGH x 10) - (MEDIUM x 3) - (LOW x 1)
 
 ### Порог для fix-loop
 - **CRITICAL + HIGH** — блокируют pipeline, требуют исправления
@@ -114,6 +146,13 @@ Score = 100 - (CRITICAL × 25) - (HIGH × 10) - (MEDIUM × 3) - (LOW × 1)
 - [ ] Метрики: {PASS|WARN|FAIL}
 - [ ] API контракты: {полнота}%
 - [ ] Доменная модель: {соответствие}%
+- [ ] BeforeDelete handlers: {проверены|отсутствуют}
+- [ ] Filtering handlers: {проверены|отсутствуют}
+- [ ] WebAPI DTO (не raw JSON): {PASS|FAIL}
+- [ ] Logger.WithLogger: {PASS|WARN}
+- [ ] Enum .resx ключи: {PASS|FAIL}
+- [ ] AccusativeDisplayName: {PASS|N/A}
+- [ ] ModuleVersionInit: {PASS|WARN}
 ```
 
 ## GitHub Issues

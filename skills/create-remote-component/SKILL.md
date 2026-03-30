@@ -297,7 +297,69 @@ export default (args: ILoaderArgs): Promise<ControlCleanupCallback> => {
 
 **Ключевое отличие Cover от Card:** Cover-loader использует `IRemoteComponentCoverApi` и НЕ передаёт `controlInfo`.
 
+### 6. Dual-scope контрол (GoalsMap паттерн)
+
+Один контрол с **двумя** loader'ами — для карточки и обложки:
+
+```typescript
+// component.loaders.ts — регистрация двух loader'ов
+import goalsMapCardLoader from './src/loaders/goalsmap-card-loader';
+import goalsMapCoverLoader from './src/loaders/goalsmap-cover-loader';
+
+export default {
+  'GoalsMap-card-loader': goalsMapCardLoader,
+  'GoalsMap-cover-loader': goalsMapCoverLoader,
+};
+```
+
+Компонент адаптирует поведение через prop `scope`:
+```tsx
+const GoalsMap: React.FC<IProps> = ({ scope, initialContext, api }) => {
+  if (scope === 'Card') {
+    // Режим карточки: читаем свойства сущности
+    const cardApi = api as IRemoteComponentCardApi;
+    const entityId = cardApi.controlInfo?.entityId;
+  } else {
+    // Режим обложки: показываем сводку по модулю
+    const coverApi = api as IRemoteComponentCoverApi;
+  }
+};
+```
+
+### 7. Application-scope контрол (Matrix паттерн)
+
+Полноэкранное приложение внутри RX. Отличия:
+- `hostApiVersion: "1.0.1"` (обязательно)
+- `displayNames` в metadata.json (для навигации RX)
+- Нет `controlInfo` — приложение управляет своим routing
+- Полный доступ к window, может использовать WASM
+
+### 8. Scope-specific API
+
+| | Card | Cover | Application |
+|--|------|-------|-------------|
+| **API интерфейс** | `IRemoteComponentCardApi` | `IRemoteComponentCoverApi` | Полный window |
+| **controlInfo** | Да (entityId, properties) | Нет | Нет |
+| **context** | Сущность | Модуль | Приложение |
+| **hostApiVersion** | `"1.0.0"` | `"1.0.0"` | `"1.0.1"` |
+| **displayNames** | Нет | Нет | Обязательно |
+| **Когда** | Контрол на карточке | Контрол на обложке | Отдельное приложение |
+
 ## CSS-переменные — дизайн-система RNDX
+
+### ПРАВИЛЬНО vs НЕПРАВИЛЬНО
+```css
+/* ✅ ПРАВИЛЬНО: платформенные переменные */
+color: var(--rndx-theme_text-primary);
+background: var(--rndx-theme_background-body);
+border: 1px solid var(--rndx-theme_border-light);
+
+/* ❌ НЕПРАВИЛЬНО: кастомные переменные (сломаются при смене темы) */
+color: var(--crm-text-primary);
+background: var(--my-bg-color);
+```
+
+> Кастомные CSS-переменные допустимы ТОЛЬКО для значений, которых нет в `--rndx-theme_*` (например, специфичные для компонента размеры). Для цветов, фонов, границ, теней — ВСЕГДА платформенные.
 
 Все production RC (Targets, OmniApplied) используют единую систему CSS-переменных `--rndx-theme_*`. **Обязательно** используй их вместо хардкода цветов — иначе сломается night theme.
 
