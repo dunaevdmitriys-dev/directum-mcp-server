@@ -1,0 +1,41 @@
+{
+  "mcpServers": {
+    "directum-scaffold": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.Scaffold"],
+      "env": {
+        "SOLUTION_PATH": "${SOLUTION_PATH}"
+      }
+    },
+    "directum-validate": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.Validate"],
+      "env": {
+        "SOLUTION_PATH": "${SOLUTION_PATH}"
+      }
+    },
+    "directum-analyze": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.Analyze"],
+      "env": {
+        "SOLUTION_PATH": "${SOLUTION_PATH}"
+      }
+    },
+    "directum-deploy": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.Deploy"],
+      "env": {
+        "SOLUTION_PATH": "${SOLUTION_PATH}"
+      }
+    },
+    "directum-runtime": {
+      "command": "dotnet",
+      "args": ["run", "--project", "src/DirectumMcp.Runtime"],
+      "env": {
+        "RX_ODATA_URL": "http://localhost/Integration/odata",
+        "RX_USERNAME": "Administrator",
+        "RX_PASSWORD": "11111"
+      }
+    }
+  }
+}

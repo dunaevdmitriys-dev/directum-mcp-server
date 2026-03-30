@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.DS_Store
+node_modules/
+.env
+*.local
