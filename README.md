@@ -4,7 +4,21 @@
 
 Подключаете к [Claude Code](https://claude.ai/code) — и получаете: создание сущностей, валидацию пакетов, поиск по платформе, сборку .dat, работу с OData.
 
-**86 инструментов, 624 теста, 34 ресурса knowledge base.**
+**86 инструментов, 624 теста, 49 гайдов knowledge base.**
+
+---
+
+## Что внутри
+
+| Каталог | Что это | README |
+|---------|---------|--------|
+| [`src/`](src/) | 5 MCP-серверов (86 инструментов, C#/.NET 10) | [Архитектура](src/README.md) |
+| [`skills/`](skills/) | 41 команда (`/create-databook`, `/validate-all`, ...) | [Каталог](skills/README.md) |
+| [`agents/`](agents/) | 16 агентов pipeline (Researcher → Developer → Reviewer) | [Pipeline](agents/README.md) |
+| [`rules/`](rules/) | Правила платформы для Claude Code | [Описание](rules/README.md) |
+| [`hooks/`](hooks/) | Автопроверки при сохранении файлов | [Описание](hooks/README.md) |
+| [`knowledge-base/`](knowledge-base/) | 49 гайдов по Directum RX | [Каталог](knowledge-base/INDEX.md) |
+| [`scripts/`](scripts/) | Скрипты автоустановки (macOS/Windows/Linux) | [Описание](scripts/README.md) |
 
 ---
 
@@ -80,6 +94,35 @@ claude
 ```
 
 Если вернулось `Employee, NameGuid: b7905516-...` — всё работает.
+
+---
+
+## Модульная установка
+
+Не обязательно ставить всё. Берите только нужное:
+
+### Только MCP-серверы (проверки и генерация кода)
+```bash
+git clone https://github.com/dunaevdmitriys-dev/directum-mcp-server
+cd directum-mcp-server && dotnet build src/
+# Подключите нужные серверы в .mcp.json (см. src/README.md)
+```
+
+### Только Skills (команды для Claude Code)
+```bash
+# Скопируйте в свой проект
+curl -L https://github.com/dunaevdmitriys-dev/directum-mcp-server/archive/master.tar.gz | tar xz --strip=2 -C .claude/skills directum-mcp-server-master/skills
+```
+
+### Только Knowledge Base (гайды)
+```bash
+curl -L https://github.com/dunaevdmitriys-dev/directum-mcp-server/archive/master.tar.gz | tar xz --strip=2 -C knowledge-base directum-mcp-server-master/knowledge-base
+```
+
+### Только Hooks + Rules
+```bash
+curl -L https://github.com/dunaevdmitriys-dev/directum-mcp-server/archive/master.tar.gz | tar xz --strip=2 -C .claude directum-mcp-server-master/hooks directum-mcp-server-master/rules
+```
 
 ---
 
@@ -212,7 +255,7 @@ claude
 
 ---
 
-## Knowledge Base — 34 ресурса
+## Knowledge Base — 49 гайдов
 
 Встроенная база знаний о платформе Directum RX 26.1. AI читает нужный ресурс автоматически перед работой.
 
