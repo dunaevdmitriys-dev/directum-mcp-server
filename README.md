@@ -4,7 +4,7 @@
 
 Подключаете к [Claude Code](https://claude.ai/code) — и получаете: создание сущностей, валидацию пакетов, поиск по платформе, сборку .dat, работу с OData.
 
-**86 инструментов, 624 теста, 34 ресурса knowledge base, 44 skills, 17 agents.**
+**86 инструментов, 624 теста, 34 ресурса knowledge base.**
 
 ---
 
@@ -62,8 +62,8 @@ dotnet test src/DirectumMcp.Tests/
       "args": ["run", "--project", "/путь/к/directum-mcp-server/src/DirectumMcp.Runtime"],
       "env": {
         "RX_ODATA_URL": "http://localhost/Integration/odata",
-        "RX_USERNAME": "Administrator",
-        "RX_PASSWORD": "11111"
+        "RX_USERNAME": "${RX_USERNAME}",
+        "RX_PASSWORD": "${RX_PASSWORD}"
       }
     }
   }
@@ -260,42 +260,6 @@ directum-mcp-server/
 ```bash
 dotnet test src/DirectumMcp.Tests/   # 624 теста, ~1 сек
 ```
-
----
-
-## Changelog
-
-### v2.1 — Production Patterns (2026-03-30)
-
-#### MCP Server Fixes (C#)
-- **scaffold_webapi**: Auto-generates CommonResponse PublicStructure DTO for typed API responses
-- **scaffold_async_handler**: Removed non-existent `MaxRetryCount` field from MTD template
-- **scaffold_widget**: Fixed handler signatures — real `GetWidgetBarChartValueEventArgs` instead of fabricated `GetData()`
-- **lint_async_handlers**: Removed MaxRetryCount lint check (field doesn't exist in DDS)
-- All fixes verified with `dotnet build` — 0 errors, 0 warnings
-
-#### Skills Fixed (5)
-- **create-widget**: Real handler signatures for BarChart/PieChart/Gauge/Plot/Action-widget from Targets production code
-- **create-async-handler**: Removed MaxRetryCount, added 5 retry patterns (NextRetryTime, Fan-out, Lock-aware, Bounded)
-- **create-webapi**: Added CommonResponse wrapping, Logger.WithLogger() pattern, anti-patterns section
-- **create-workflow**: Added RouteScheme XML generation, 5 block types, conditional routing, handler signatures
-- **create-remote-component**: Added dual-scope (Card+Cover), Application scope, platform CSS variables (--rndx-theme_*)
-
-#### New Skills (3)
-- **/create-response-dto** — PublicStructure DTO creation (CommonResponse, Request/Response wrappers)
-- **/create-module-queries** — ModuleQueries.xml with PostgreSQL/MSSQL dual-variant SQL
-- **/create-centrifugo-integration** — Real-time WebSocket via Centrifugo for RC components
-
-#### Agents Enhanced (4)
-- **developer.md** — Production code patterns (BeforeDelete, Saved, Filtering, Locks, Logger.WithLogger)
-- **code-reviewer.md** — Review checklist from Targets audit (resx, handlers, response wrapping)
-- **architect.md** — Architectural quality criteria (DDS-first, async handlers, IsolatedAreas)
-- **security-reviewer.md** — Access rights patterns (IsGrantedDirectly, Revoke→Grant, role checks)
-
-#### Totals
-- **Skills**: 41 → 44
-- **MCP tools**: 86 (4 fixed)
-- **Agents**: 17 (4 enhanced)
 
 ---
 

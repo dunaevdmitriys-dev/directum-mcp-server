@@ -8,12 +8,12 @@
 
 | Что | Путь |
 |-----|------|
-| Deal Actions MTD (6 actions: CreateProposal, CreateContract, CreateInvoice, ShowDealDocuments, AddActivity, OpenInCrmSpa) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.Shared/Deal/Deal.mtd` строки 5-59 |
-| Lead ConvertLead Action MTD | `CRM/crm-package/source/DirRX.CRMMarketing/DirRX.CRMMarketing.Shared/Lead/Lead.mtd` строки 5-14 |
-| DealActions.cs (C# обработчики) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.ClientBase/Deal/DealActions.cs` |
-| LeadActions.cs (ConvertLead с диалогом) | `CRM/crm-package/source/DirRX.CRMMarketing/DirRX.CRMMarketing.ClientBase/Lead/LeadActions.cs` |
-| DealSystem.resx (Action_ ключи) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.Shared/Deal/DealSystem.resx` строки 142-195 |
-| DealSystem.ru.resx (ru локализация) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.Shared/Deal/DealSystem.ru.resx` строка 57, 67 |
+| Deal Actions MTD (6 actions: CreateProposal, CreateContract, CreateInvoice, ShowDealDocuments, AddActivity, OpenInCrmSpa) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/{Entity}/{Entity}.mtd` (найди аналог через search_metadata) |
+| Lead ConvertLead Action MTD | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/{Entity}/{Entity}.mtd` (пример ConvertLead) |
+| DealActions.cs (C# обработчики) | `{package_path}/source/{ModuleName}/{ModuleName}.ClientBase/{Entity}/{Entity}Actions.cs` |
+| LeadActions.cs (ConvertLead с диалогом) | `{package_path}/source/{ModuleName}/{ModuleName}.ClientBase/{Entity}/{Entity}Actions.cs` (пример с диалогом) |
+| DealSystem.resx (Action_ ключи) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/{Entity}/{Entity}System.resx` (Action_ ключи) |
+| DealSystem.ru.resx (ru локализация) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/{Entity}/{Entity}System.ru.resx` |
 | Правила Actions (теория) | Гайд `knowledge-base/guides/25_code_patterns.md` раздел 8 |
 
 ---

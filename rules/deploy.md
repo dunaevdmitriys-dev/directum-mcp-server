@@ -10,10 +10,11 @@ paths:
 - `docker-compose.rx.yml` — RX stack: HAProxy (:8080), WebServer (:44310), WebClient (:44320), StorageService (:44330), IntegrationService (:44340), Worker, JobScheduler, Grains (Orleans)
 
 ## Credentials
-- PostgreSQL: directum / directum / directum
-- RabbitMQ: directum / directum
+Задаются через переменные окружения (см. `.env.example`):
+- PostgreSQL: `$POSTGRES_USER` / `$POSTGRES_PASSWORD`
+- RabbitMQ: `$RABBITMQ_USER` / `$RABBITMQ_PASSWORD`
 - Elasticsearch: без авторизации
-- RX Web Client: http://localhost:8080/Client (Administrator/11111)
+- RX Web Client: http://localhost:8080/Client (`$RX_USERNAME` / `$RX_PASSWORD`)
 - OData: http://localhost:8080/Integration/odata/
 
 ## Volumes

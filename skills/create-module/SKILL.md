@@ -23,7 +23,7 @@ description: "Создать новый модуль Directum RX с нуля"
 # Используй MCP: search_metadata name=Company для поиска эталонов
 
 # Найди модуль в текущем проекте:
-# Glob("{project}/source/*/*.Shared/Module.mtd") — найти существующие модули
+# Glob("{package_path}/source/*/*.Shared/Module.mtd") — найти существующие модули
 # MCP: search_metadata scope=modules — поиск эталонных модулей
 
 # Посмотри Dependencies, Cover, AsyncHandlers, Jobs — используй как образец.

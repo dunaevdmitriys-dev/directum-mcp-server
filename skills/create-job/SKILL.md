@@ -20,8 +20,9 @@ description: "Создать фоновое задание (Background Job) Dire
 MCP: search_metadata query=Jobs scope=modules
 
 # Прочитай секцию Jobs в Module.mtd:
-# DirRX.CRM Module.mtd содержит 2 реальных Job-а (StaleDealJob, LeadAssignmentJob)
+# Найди Module.mtd с секцией Jobs через Glob("{package_path}/source/*/*.Shared/Module.mtd")
 # Посмотри структуру: GenerateHandler, MonthSchedule, StartAt.
+# Или используй MCP: search_metadata query=Jobs scope=modules для поиска эталонов.
 ```
 
 ## Входные данные

@@ -12,15 +12,15 @@ description: "Создать WebAPI endpoint Directum RX — GET/POST, CommonRes
 
 | Файл | Путь |
 |------|------|
-| **WebAPI (8 endpoints, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleServerFunctions.cs` |
-| **CommonResponse структура** | `targets/source/DirRX.Targets/DirRX.Targets.Shared/Module.mtd` секция PublicStructures |
-| **Документация** | `targets/CODE_PATTERNS_CATALOG.md` секция 2 |
+| **WebAPI (8 endpoints, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleServerFunctions.cs` (если доступен) |
+| **CommonResponse структура** | `targets/source/DirRX.Targets/DirRX.Targets.Shared/Module.mtd` секция PublicStructures (если доступен) |
+| **Документация** | `targets/CODE_PATTERNS_CATALOG.md` секция 2 (если доступен) |
 
 ### Приоритет 2 — CRM (JSON строки, 30+ endpoints)
 
 **Эталон: DirRX.CRM.Server/ModuleServerFunctions.cs** — 30+ WebAPI endpoints (GET/POST), DTO через Structures, JSON сериализация.
 
-| Файл | Путь (от `CRM/crm-package/source/`) |
+| Файл | Путь (от `{package_path}/source/`) |
 |------|------|
 | **WebAPI endpoints** | `DirRX.CRM/DirRX.CRM.Server/ModuleServerFunctions.cs` |
 | **PublicStructures (22 DTO)** | `DirRX.CRM/DirRX.CRM.Shared/Module.mtd` — PipelineDto, StageDto, DealDto, ... |

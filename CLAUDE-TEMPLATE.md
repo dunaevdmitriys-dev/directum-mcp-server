@@ -26,7 +26,7 @@
 - Пропускать валидацию — после КАЖДОГО изменения -> `/validate-all`
 
 ## Стенд
-- Логин: Administrator / 11111
+- Логин: задаётся через `RX_USERNAME` / `RX_PASSWORD` (см. `.env.example`)
 - URL: http://localhost:8080/Client
 
 ## Правила платформы

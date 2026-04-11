@@ -29,17 +29,21 @@ public sealed record DirectumConfig
         var user = Environment.GetEnvironmentVariable("RX_USERNAME");
         var pass = Environment.GetEnvironmentVariable("RX_PASSWORD");
 
-        // Fallback defaults for local development
         if (string.IsNullOrEmpty(url))
-            url = "http://localhost/Integration/odata";
-        if (string.IsNullOrEmpty(user))
-            user = "Administrator";
-        if (string.IsNullOrEmpty(pass))
-            pass = string.Empty;
+            throw new InvalidOperationException(
+                "RX_ODATA_URL environment variable is required. " +
+                "Example: http://your-stand/Integration/odata. " +
+                "See .env.example for all required variables.");
 
-        // Validation warnings
+        if (string.IsNullOrEmpty(user))
+            throw new InvalidOperationException(
+                "RX_USERNAME environment variable is required. " +
+                "Example: Administrator. " +
+                "See .env.example for all required variables.");
+
         if (string.IsNullOrEmpty(pass))
             Console.Error.WriteLine("WARNING: RX_PASSWORD is empty — OData requests will likely fail with 401.");
+
         if (!url.Contains("://"))
             Console.Error.WriteLine($"WARNING: RX_ODATA_URL '{url}' looks invalid (no scheme). Expected: http(s)://host/Integration/odata");
 
@@ -47,7 +51,7 @@ public sealed record DirectumConfig
         {
             ODataUrl = url,
             Username = user,
-            Password = pass
+            Password = pass ?? string.Empty
         };
     }
 }

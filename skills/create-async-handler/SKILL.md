@@ -16,7 +16,7 @@ description: "Создать асинхронный обработчик (AsyncH
 ## ШАГ 0: Найди рабочий пример (ОБЯЗАТЕЛЬНО)
 
 ```
-# Приоритет 1 — Targets (9 production AH с продвинутыми retry-паттернами):
+# Приоритет 1 — Targets (если доступен; 9 production AH с продвинутыми retry-паттернами):
 Read targets/source/DirRX.Targets/DirRX.Targets.Server/ModuleAsyncHandlers.cs
 Read targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleAsyncHandlers.cs
 
@@ -24,7 +24,7 @@ Read targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleAsyncHandlers.cs
 MCP: search_metadata query=AsyncHandlers scope=modules
 
 # Приоритет 3 — CRM (базовые):
-Read CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Server/ModuleAsyncHandlers.cs
+# Найди ModuleAsyncHandlers.cs через Glob("{package_path}/source/*/*.Server/ModuleAsyncHandlers.cs")
 ```
 
 ## Входные данные

@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 // Dual-mode: stdio (default for Claude Code) or HTTP (for remote access)
 var useHttp = args.Contains("--http");
-var port = 3001;
+var port = int.TryParse(Environment.GetEnvironmentVariable("RUNTIME_MCP_PORT"), out var envPort) ? envPort : 3001;
 
 var portArg = args.FirstOrDefault(a => a.StartsWith("--port="));
 if (portArg != null && int.TryParse(portArg.Split('=')[1], out var parsedPort))

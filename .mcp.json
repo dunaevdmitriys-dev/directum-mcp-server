@@ -32,9 +32,9 @@
       "command": "dotnet",
       "args": ["run", "--project", "src/DirectumMcp.Runtime"],
       "env": {
-        "RX_ODATA_URL": "http://localhost/Integration/odata",
-        "RX_USERNAME": "Administrator",
-        "RX_PASSWORD": "11111"
+        "RX_ODATA_URL": "${RX_ODATA_URL}",
+        "RX_USERNAME": "${RX_USERNAME}",
+        "RX_PASSWORD": "${RX_PASSWORD}"
       }
     }
   }
