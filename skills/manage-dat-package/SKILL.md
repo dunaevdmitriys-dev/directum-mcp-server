@@ -11,23 +11,26 @@ description: "Полный lifecycle .dat пакета: валидация, ис
 ## ШАГ 0: Реальные пути CRM-пакета
 
 ```
-# WORKSPACE — корень рабочего пространства (определи через pwd в корне репозитория)
-# PACKAGE_PATH — путь к DDS-пакету (содержит PackageInfo.xml и source/)
-# Найди пакет: Glob("*/PackageInfo.xml") или Glob("*-package/source/")
+WORKSPACE = $(pwd)  # определяется автоматически
 
-Структура пакета:
-  {package_path}/                                     — корень пакета
-  {package_path}/PackageInfo.xml                       — манифест пакета
-  {package_path}/source/                               — исходники (модули)
+Пакет (найди через Glob "*/PackageInfo.xml"):
+  $WORKSPACE/{package_path}/                          — корень пакета
+  $WORKSPACE/CRM/crm-package/PackageInfo.xml          — манифест пакета
+  $WORKSPACE/CRM/crm-package/source/                  — исходники (6 модулей)
 
-Модули: определи GUID из PackageInfo.xml и Module.mtd (NameGuid).
-  Используй: Read {package_path}/PackageInfo.xml для списка модулей и их GUID.
+Модули в пакете:
+  DirRX.Solution       (f5a3bed1-283c-4462-8a50-1e1b3fb2b86e) — корневое решение (IsSolution=true)
+  DirRX.CRM            (9a46d6b8-dcb1-41de-87f6-36ccdcdeeb1b) — главный модуль
+  DirRX.CRMCommon      (3ca9f67a-3e17-4af9-a489-5f70d4c65156) — общие справочники
+  DirRX.CRMSales       (35525bec-948a-48a0-92c8-cb840bb21096) — сделки, воронки
+  DirRX.CRMMarketing   (889be16f-b1d8-4726-b30e-4bff6e78faa0) — лиды, кампании
+  DirRX.CRMDocuments   (789271f2-105f-4a8a-8d6d-30e4650139de) — КП, счета
 
 Launcher:
-  Определи путь через $LAUNCHER_PATH или найди: Glob("дистрибутив/*/do.sh")
+  $WORKSPACE/дистрибутив/DirectumLauncher/             — DirectumLauncher (do.sh / do.bat)
 
 Выходной .dat:
-  {package_path}/{SolutionName}.dat                    — собранный пакет
+  $WORKSPACE/CRM/crm-package/DirRX.Solution.dat        — собранный пакет
 ```
 
 ---
@@ -97,7 +100,7 @@ check_package  -->  fix_package (dryRun)  -->  fix_package (apply)  -->  build_d
 
 ## ШАГ 3: Валидация (check_package)
 
-**MCP:** `check_package packagePath="{package_path}"`
+**MCP:** `check_package packagePath="$WORKSPACE/CRM/crm-package"`
 
 14 автоматических проверок:
 1. CollectionProperty в DatabookEntry
@@ -119,23 +122,23 @@ check_package  -->  fix_package (dryRun)  -->  fix_package (apply)  -->  build_d
 
 ```bash
 # Проверка JSON-валидности всех .mtd
-find "{package_path}/source/" -name "*.mtd" \
+find "$WORKSPACE/CRM/crm-package/source/" -name "*.mtd" \
   -exec sh -c 'python3 -m json.tool "$1" > /dev/null 2>&1 || echo "INVALID: $1"' _ {} \;
 
 # Проверка partial class
-grep -rn "public class\|^class " "{package_path}/source/" \
+grep -rn "public class\|^class " "$WORKSPACE/CRM/crm-package/source/" \
   --include="*.cs" | grep -v "partial" | grep -v "static class" | grep -v "Constants"
 
 # Проверка устаревших resx-ключей
-grep -r "Resource_" "{package_path}/source/"**/*System*.resx
+grep -r "Resource_" "$WORKSPACE/CRM/crm-package/source/"**/*System*.resx
 ```
 
 ---
 
 ## ШАГ 4: Исправление (fix_package)
 
-**MCP (dry-run):** `fix_package packagePath="{package_path}" dryRun=true`
-**MCP (apply):** `fix_package packagePath="{package_path}" dryRun=false`
+**MCP (dry-run):** `fix_package packagePath="$WORKSPACE/CRM/crm-package" dryRun=true`
+**MCP (apply):** `fix_package packagePath="$WORKSPACE/CRM/crm-package" dryRun=false`
 
 Автоисправления:
 - `Resource_<GUID>` -> `Property_<Name>` в System.resx
@@ -149,14 +152,14 @@ grep -r "Resource_" "{package_path}/source/"**/*System*.resx
 
 ## ШАГ 5: Сборка .dat (build_dat)
 
-**MCP:** `build_dat packagePath="{package_path}"`
+**MCP:** `build_dat packagePath="$WORKSPACE/CRM/crm-package"`
 
 Это создаст `DirRX.Solution.dat` в родительской директории.
 
 ### Ручная сборка (fallback)
 
 ```bash
-cd "{package_path}"
+cd "$WORKSPACE/CRM/crm-package"
 rm -f "DirRX.Solution.dat"
 
 # Собрать список файлов
@@ -193,19 +196,19 @@ DirRX.Solution.dat
 
 ## ШАГ 6: Деплой на стенд (deploy_to_stand)
 
-**MCP (dry-run):** `deploy_to_stand dat_path="{package_path}/DirRX.Solution.dat"`
+**MCP (dry-run):** `deploy_to_stand dat_path="$WORKSPACE/CRM/crm-package/DirRX.Solution.dat"`
 **MCP (apply):** `deploy_to_stand dat_path="..." confirm=true dry_run=false`
 
 ### Ручной деплой через DirectumLauncher
 
 ```bash
-LAUNCHER="${LAUNCHER_PATH:-дистрибутив/launcher}"
+LAUNCHER="$WORKSPACE/дистрибутив/DirectumLauncher"
 
 # Режим dev (быстрый, только код):
-$LAUNCHER/do.sh dt deploy --package="{package_path}/DirRX.Solution.dat" --force --dev
+$LAUNCHER/do.sh dt deploy --package="$WORKSPACE/CRM/crm-package/DirRX.Solution.dat" --force --dev
 
 # Режим full (код + init + settings):
-$LAUNCHER/do.sh dt deploy --package="{package_path}/DirRX.Solution.dat" --force
+$LAUNCHER/do.sh dt deploy --package="$WORKSPACE/CRM/crm-package/DirRX.Solution.dat" --force
 
 # Режим init (только инициализация данных):
 $LAUNCHER/do.sh dt deploy --package="..." --force --init
@@ -249,7 +252,7 @@ $LAUNCHER/do.sh dt deploy --package="..." --force --settings
 После публикации пакета на стенд:
 
 ```bash
-LAUNCHER="${LAUNCHER_PATH:-дистрибутив/launcher}"
+LAUNCHER="$WORKSPACE/дистрибутив/DirectumLauncher"
 
 # 1. Проверить что решение развёрнуто
 $LAUNCHER/do.sh dt get-deployed-solutions
@@ -318,14 +321,14 @@ docker compose -f deploy/docker-compose.rx.yml exec web \
 ### Merge нескольких .dat
 
 ```bash
-LAUNCHER="${LAUNCHER_PATH:-дистрибутив/launcher}"
+LAUNCHER="$WORKSPACE/дистрибутив/launcher"
 
 # Объединить несколько пакетов в один
-$LAUNCHER/do.sh dt merge_packages "{output_path}/Full.dat" \
+$LAUNCHER/do.sh dt merge_packages "$WORKSPACE/output/Full.dat" \
   --packages="Base.dat;Custom.dat;CRM.dat"
 
 # Из компонентов Launcher
-$LAUNCHER/do.sh dt merge_packages "{output_path}/Full.dat" \
+$LAUNCHER/do.sh dt merge_packages "$WORKSPACE/output/Full.dat" \
   --package_from_component="base;agile;crm"
 ```
 
@@ -349,20 +352,20 @@ $LAUNCHER/do.sh dt remove_solutions --solution_names="DirRX.OldModule DirRX.Depr
 
 ```bash
 $LAUNCHER/do.sh dt export_package \
-  --export_package="{output_path}/CRM.dat" \
-  --configuration="{output_path}/export-config.xml" \
-  --root="$(pwd)" \
-  --repositories="{package_relative_path}"
+  --export_package="$WORKSPACE/output/CRM.dat" \
+  --configuration="$WORKSPACE/output/export-config.xml" \
+  --root="$WORKSPACE" \
+  --repositories="CRM/crm-package"
 ```
 
 ### Export/Import настроек (.datx)
 
 ```bash
 # Экспорт всех настроек
-$LAUNCHER/do.sh dt export_settings --path="{output_path}/settings.datx"
+$LAUNCHER/do.sh dt export_settings --path="$WORKSPACE/output/settings.datx"
 
 # Импорт
-$LAUNCHER/do.sh dt import_settings --path="{output_path}/settings.datx"
+$LAUNCHER/do.sh dt import_settings --path="$WORKSPACE/output/settings.datx"
 ```
 
 ### Exit-коды DeploymentToolCore

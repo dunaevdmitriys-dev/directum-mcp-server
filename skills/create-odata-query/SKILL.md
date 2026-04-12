@@ -10,19 +10,19 @@ description: "Составить OData-запрос к Directum RX Integration S
 - `search_metadata` -- найти IntegrationServiceName в MTD
 - `check_code_consistency` -- проверка после изменений
 
-## ШАГ 0: Реальные OData-примеры (найди аналог в своём проекте)
+## ШАГ 0: Реальные OData-примеры из CRM API
 
 **Файлы-образцы (подглядывай!):**
 
 | Что | Файл |
 |-----|------|
-| ODataService (GET/POST/PATCH/DELETE) | `{project_path}/Services/ODataService.cs` (если есть OData-обёртка в проекте) |
-| ODataQueryBuilder (fluent) | `{project_path}/Services/ODataQueryBuilder.cs` (если есть fluent builder) |
-| OData entity set константы | `{project_path}/Services/Constants.cs` (OData entity set константы) |
-| GET с $filter/$expand | `{project_path}/Endpoints/` (примеры GET с $filter/$expand) |
-| GET $select/$top | `{project_path}/Endpoints/` (примеры GET $select/$top, PATCH) |
-| POST с @odata.bind | `{project_path}/Services/` (пример POST с @odata.bind) |
-| PATCH с @odata.bind | `{project_path}/Endpoints/` (примеры GET $select/$top, PATCH) |
+| ODataService (GET/POST/PATCH/DELETE) | `CRM/CrmApiV3/Services/ODataService.cs` |
+| ODataQueryBuilder (fluent) | `CRM/CrmApiV3/Services/ODataQueryBuilder.cs` |
+| OData entity set константы | `CRM/CrmApiV3/Services/CrmConstants.cs` |
+| GET с $filter/$expand | `CRM/CrmApiV3/Endpoints/DealEndpoints.cs` |
+| GET $select/$top | `CRM/CrmApiV3/Endpoints/TeamEndpoints.cs` |
+| POST с @odata.bind | `CRM/CrmApiV3/Services/PipelineService.cs` |
+| PATCH с @odata.bind | `CRM/CrmApiV3/Endpoints/TeamEndpoints.cs` |
 
 **Реальные запросы из CRM:**
 ```
@@ -84,7 +84,7 @@ I{IntegrationServiceName}s
 
 ```
 # Найти IntegrationServiceName:
-Grep("IntegrationServiceName", "{package_path}/source/**/*.mtd")
+Grep("IntegrationServiceName", "CRM/crm-package/source/**/*.mtd")
 
 # Или через MCP:
 MCP: predict_odata_name entity=Deal
@@ -211,7 +211,7 @@ DELETE {BaseUrl}{EntitySet}({id})
 ### Правильно: ODataQueryBuilder (CRM API)
 
 ```csharp
-// Файл: {project_path}/Services/ODataQueryBuilder.cs (если есть)
+// Файл: CRM/CrmApiV3/Services/ODataQueryBuilder.cs
 var query = ODataQuery.For(CrmConstants.ODataSets.Deals)
     .Select("Id", "Name", "Amount")
     .FilterEq("Pipeline/Id", pipelineId)  // long -- безопасно

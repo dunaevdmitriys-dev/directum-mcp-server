@@ -51,7 +51,5 @@ description: "Закоммитить и запушить все изменени
 
 **API:**
 ```bash
-# Определи owner/repo из текущего remote:
-# REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-gh api repos/{GITHUB_ORG}/{REPO_NAME}/issues/{N}/comments -f body="..."
+gh api repos/dunaevdmitriys-dev/directum-mcp-server/issues/{N}/comments -f body="..."
 ```

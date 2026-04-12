@@ -21,6 +21,7 @@ public class EntityScaffoldService : IPipelineStep
         ["double"] = "Sungero.Metadata.DoublePropertyMetadata",
         ["bool"] = "Sungero.Metadata.BooleanPropertyMetadata",
         ["date"] = "Sungero.Metadata.DateTimePropertyMetadata",
+        ["datetime"] = "Sungero.Metadata.DateTimePropertyMetadata",
         ["text"] = "Sungero.Metadata.TextPropertyMetadata",
         ["navigation"] = "Sungero.Metadata.NavigationPropertyMetadata"
     };
@@ -30,9 +31,10 @@ public class EntityScaffoldService : IPipelineStep
         ["string"] = "Sungero.Presentation.CommonDataBinders.StringEditorToStringBinder",
         ["text"] = "Sungero.Presentation.CommonDataBinders.StringEditorToStringBinder",
         ["int"] = "Sungero.Presentation.CommonDataBinders.NumericEditorToIntBinder",
-        ["double"] = "Sungero.Presentation.CommonDataBinders.NumericEditorToIntBinder",
+        ["double"] = "Sungero.Presentation.CommonDataBinders.NumericEditorToDoubleBinder",
         ["bool"] = "Sungero.Presentation.CommonDataBinders.BooleanEditorToBooleanBinder",
         ["date"] = "Sungero.Presentation.CommonDataBinders.DateTimeEditorToDateTimeBinder",
+        ["datetime"] = "Sungero.Presentation.CommonDataBinders.DateTimeEditorToDateTimeBinder",
         ["navigation"] = "Sungero.Presentation.CommonDataBinders.DropDownEditorToNavigationBinder",
         ["enum"] = "Sungero.Presentation.CommonDataBinders.DropDownEditorToEnumerationBinder"
     };
@@ -197,6 +199,10 @@ public class EntityScaffoldService : IPipelineStep
         sb.AppendLine("    {");
         sb.AppendLine($"      \"Type\": \"{metadataType.Split('.').Last()}\",");
         sb.AppendLine("      \"Number\": 13");
+        sb.AppendLine("    },");
+        sb.AppendLine("    {");
+        sb.AppendLine("      \"Type\": \"DomainApi\",");
+        sb.AppendLine("      \"Number\": 2");
         sb.AppendLine("    }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");

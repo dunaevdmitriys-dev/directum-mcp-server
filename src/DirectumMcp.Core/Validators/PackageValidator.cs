@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DirectumMcp.Core.Helpers;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -65,6 +66,10 @@ public static class PackageValidator
     /// </summary>
     public static async Task<List<ValidationResult>> RunAllChecks(string workDir)
     {
+        if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
+            return [new ValidationResult(ValidationSeverity.Error, "RunAllChecks",
+                $"Директория не найдена: `{workDir ?? "(null)"}`", workDir, CanAutoFix: false)];
+
         var mtdFiles = Directory.GetFiles(workDir, "*.mtd", SearchOption.AllDirectories);
         var resxFiles = Directory.GetFiles(workDir, "*System.resx", SearchOption.AllDirectories);
 
@@ -73,13 +78,20 @@ public static class PackageValidator
 
         foreach (var f in mtdFiles)
         {
-            var json = await File.ReadAllTextAsync(f);
-            var doc = JsonDocument.Parse(json);
-            var typeProp = doc.RootElement.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-            if (typeProp.Contains("ModuleMetadata"))
-                modules.Add((f, doc));
-            else
-                entities.Add((f, doc));
+            try
+            {
+                var json = await File.ReadAllTextAsync(f);
+                var doc = JsonDocument.Parse(json);
+                var typeProp = doc.RootElement.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
+                if (typeProp.Contains("ModuleMetadata"))
+                    modules.Add((f, doc));
+                else
+                    entities.Add((f, doc));
+            }
+            catch
+            {
+                // Skip unparseable MTD files gracefully
+            }
         }
 
         var results = new List<ValidationResult>();
@@ -111,6 +123,10 @@ public static class PackageValidator
     /// </summary>
     public static async Task<(List<CheckResult> Results, int MtdCount, int ResxCount)> RunAllChecksLegacy(string workDir)
     {
+        if (string.IsNullOrEmpty(workDir) || !Directory.Exists(workDir))
+            return ([new CheckResult("DirectoryCheck", false,
+                [$"Директория не найдена: `{workDir ?? "(null)"}`"], "Укажите корректный путь к пакету.")], 0, 0);
+
         var mtdFiles = Directory.GetFiles(workDir, "*.mtd", SearchOption.AllDirectories);
         var resxFiles = Directory.GetFiles(workDir, "*System.resx", SearchOption.AllDirectories);
 
@@ -119,13 +135,20 @@ public static class PackageValidator
 
         foreach (var f in mtdFiles)
         {
-            var json = await File.ReadAllTextAsync(f);
-            var doc = JsonDocument.Parse(json);
-            var typeProp = doc.RootElement.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
-            if (typeProp.Contains("ModuleMetadata"))
-                modules.Add((f, doc));
-            else
-                entities.Add((f, doc));
+            try
+            {
+                var json = await File.ReadAllTextAsync(f);
+                var doc = JsonDocument.Parse(json);
+                var typeProp = doc.RootElement.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
+                if (typeProp.Contains("ModuleMetadata"))
+                    modules.Add((f, doc));
+                else
+                    entities.Add((f, doc));
+            }
+            catch
+            {
+                // Skip unparseable MTD files gracefully
+            }
         }
 
         var results = new List<CheckResult>();
@@ -261,6 +284,7 @@ public static class PackageValidator
 
         foreach (var prop in props.EnumerateArray())
         {
+            if (!prop.IsObject()) continue;
             if (prop.TryGetProperty("$type", out var t) &&
                 (t.GetString()?.Contains("CollectionPropertyMetadata") ?? false))
                 return true;
@@ -325,6 +349,7 @@ public static class PackageValidator
             {
                 foreach (var dep in deps.EnumerateArray())
                 {
+                    if (!dep.IsObject()) continue;
                     if (dep.TryGetProperty("Id", out var id))
                         dependencyModuleIds.Add(id.GetString() ?? "");
                 }
@@ -400,6 +425,7 @@ public static class PackageValidator
             {
                 foreach (var prop in props.EnumerateArray())
                 {
+                    if (!prop.IsObject()) continue;
                     var typeName = prop.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
                     if (!typeName.Contains("EnumPropertyMetadata") && !typeName.Contains("EnumBlockPropertyMetadata"))
                         continue;
@@ -414,10 +440,12 @@ public static class PackageValidator
             {
                 foreach (var block in blocks.EnumerateArray())
                 {
+                    if (!block.IsObject()) continue;
                     if (block.TryGetProperty("OutProperties", out var outProps) && outProps.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var op in outProps.EnumerateArray())
                         {
+                            if (!op.IsObject()) continue;
                             var typeName = op.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
                             if (!typeName.Contains("Enum"))
                                 continue;
@@ -439,6 +467,7 @@ public static class PackageValidator
 
         foreach (var val in vals.EnumerateArray())
         {
+            if (!val.IsObject()) continue;
             if (!val.TryGetProperty("Name", out var nameEl))
                 continue;
             var valName = nameEl.GetString() ?? "";
@@ -477,6 +506,7 @@ public static class PackageValidator
 
         foreach (var val in vals.EnumerateArray())
         {
+            if (!val.IsObject()) continue;
             if (!val.TryGetProperty("Name", out var nameEl))
                 continue;
             var valName = nameEl.GetString() ?? "";
@@ -507,6 +537,7 @@ public static class PackageValidator
 
             foreach (var prop in props.EnumerateArray())
             {
+                if (!prop.IsObject()) continue;
                 if (!prop.TryGetProperty("Code", out var codeEl))
                     continue;
                 var code = codeEl.GetString() ?? "";
@@ -587,6 +618,7 @@ public static class PackageValidator
             var taskConstraintsMap = new Dictionary<string, string>();
             foreach (var group in taskGroups.EnumerateArray())
             {
+                if (!group.IsObject()) continue;
                 var groupName = group.TryGetProperty("Name", out var gn) ? gn.GetString() ?? "" : "";
                 var constraints = group.TryGetProperty("Constraints", out var c) ? c.GetRawText() : "[]";
                 taskConstraintsMap[groupName] = constraints;
@@ -607,8 +639,9 @@ public static class PackageValidator
 
                 foreach (var group in assocGroups.EnumerateArray())
                 {
+                    if (!group.IsObject()) continue;
                     var isAssociated = group.TryGetProperty("IsAssociatedEntityGroup", out var iae) &&
-                                      iae.GetBoolean();
+                                      iae.ValueKind == JsonValueKind.True;
                     if (!isAssociated)
                         continue;
 
@@ -756,6 +789,7 @@ public static class PackageValidator
             {
                 foreach (var prop in props.EnumerateArray())
                 {
+                    if (!prop.IsObject()) continue;
                     if (prop.TryGetProperty("NameGuid", out var ng))
                         propertyGuids.Add(ng.GetString() ?? "");
                 }
@@ -775,6 +809,7 @@ public static class PackageValidator
                 // First pass: collect ControlGroup GUIDs
                 foreach (var ctrl in controls.EnumerateArray())
                 {
+                    if (!ctrl.IsObject()) continue;
                     var ctrlType = ctrl.TryGetProperty("$type", out var ct) ? ct.GetString() ?? "" : "";
                     if (ctrlType.Contains("ControlGroupMetadata"))
                     {
@@ -786,6 +821,7 @@ public static class PackageValidator
                 // Second pass: validate Control references
                 foreach (var ctrl in controls.EnumerateArray())
                 {
+                    if (!ctrl.IsObject()) continue;
                     var ctrlType = ctrl.TryGetProperty("$type", out var ct) ? ct.GetString() ?? "" : "";
                     if (!ctrlType.Contains("ControlMetadata") || ctrlType.Contains("ControlGroupMetadata"))
                         continue;
@@ -913,6 +949,7 @@ public static class PackageValidator
 
             foreach (var prop in props.EnumerateArray())
             {
+                if (!prop.IsObject()) continue;
                 if (prop.TryGetProperty("IsAncestorMetadata", out var isAnc) && isAnc.ValueKind == JsonValueKind.True)
                     continue;
 
@@ -1044,7 +1081,7 @@ public static class PackageValidator
         {
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("Cover", out var cover)) continue;
+            if (!root.TryGetProperty("Cover", out var cover) || cover.ValueKind == JsonValueKind.Null) continue;
             if (!cover.TryGetProperty("Actions", out var actions) ||
                 actions.ValueKind != JsonValueKind.Array) continue;
 
@@ -1052,6 +1089,7 @@ public static class PackageValidator
 
             foreach (var action in actions.EnumerateArray())
             {
+                if (!action.IsObject()) continue;
                 var typeProp = action.TryGetProperty("$type", out var t) ? t.GetString() ?? "" : "";
                 if (!typeProp.Contains("CoverFunctionActionMetadata")) continue;
 
@@ -1166,6 +1204,7 @@ public static class PackageValidator
             bool hasProperties = false;
             foreach (var structure in ps.EnumerateArray())
             {
+                if (!structure.IsObject()) continue;
                 if (structure.TryGetProperty("Properties", out var props) &&
                     props.ValueKind == JsonValueKind.Array &&
                     props.GetArrayLength() > 0)
@@ -1235,6 +1274,7 @@ public static class PackageValidator
             bool hasDomainApi2 = false;
             foreach (var ver in versions.EnumerateArray())
             {
+                if (!ver.IsObject()) continue;
                 if (ver.TryGetProperty("Type", out var typeEl) &&
                     string.Equals(typeEl.GetString(), "DomainApi", StringComparison.OrdinalIgnoreCase) &&
                     ver.TryGetProperty("Number", out var numEl) &&
@@ -1329,6 +1369,7 @@ public static class PackageValidator
                 {
                     foreach (var prop in props.EnumerateArray())
                     {
+                        if (!prop.IsObject()) continue;
                         if (prop.TryGetProperty("Name", out var pn))
                         {
                             var propName = pn.GetString();

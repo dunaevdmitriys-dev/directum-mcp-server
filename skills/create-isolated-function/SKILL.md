@@ -10,10 +10,10 @@
 
 | Файл | Путь |
 |------|------|
-| **IsolatedFunctions (190 строк, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Isolated/IsolatedAreas/XLSXParsing/IsolatedFunctions.cs` (если доступен) |
-| **IsolatedArea.cs** | `targets/source/DirRX.KPI/DirRX.KPI.Isolated/IsolatedAreas/XLSXParsing/IsolatedArea.cs` (если доступен) |
-| **MTD (IsolatedAreas секция)** | `targets/source/DirRX.KPI/DirRX.KPI.Shared/Module.mtd` — искать "IsolatedAreas" (если доступен) |
-| **Документация** | `targets/REFERENCE_CATALOG.md` секция IsolatedAreas (если доступен) |
+| **IsolatedFunctions (190 строк, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Isolated/IsolatedAreas/XLSXParsing/IsolatedFunctions.cs` |
+| **IsolatedArea.cs** | `targets/source/DirRX.KPI/DirRX.KPI.Isolated/IsolatedAreas/XLSXParsing/IsolatedArea.cs` |
+| **MTD (IsolatedAreas секция)** | `targets/source/DirRX.KPI/DirRX.KPI.Shared/Module.mtd` — искать "IsolatedAreas" |
+| **Документация** | `targets/REFERENCE_CATALOG.md` секция IsolatedAreas |
 
 **3 production-функции:**
 ```csharp
@@ -59,7 +59,7 @@ names.MetricName = DirRX.DTCommons.Resources.MetricName; // из resx
 Каждый модуль CRM содержит `*.Isolated/` папку (даже если пустой):
 
 ```
-{package_path}/source/  (пример — CRM)
+CRM/crm-package/source/
   DirRX.CRM/DirRX.CRM.Isolated/
     DirRX.CRM.Isolated.csproj
     AssemblyInfo.cs
@@ -391,6 +391,6 @@ MCP: validate_all               -- полная валидация
 ## Reference
 
 - **Guide 18**: `knowledge-base/guides/18_integrations_isolated.md`
-- **Isolated .csproj**: `{package_path}/source/{ModuleName}/{ModuleName}.Isolated/{ModuleName}.Isolated.csproj`
-- **Module.mtd (IsolatedNamespace)**: `{package_path}/source/{ModuleName}/{ModuleName}.Shared/Module.mtd`
+- **CRM Isolated .csproj**: `CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Isolated/DirRX.CRM.Isolated.csproj`
+- **CRM Module.mtd (IsolatedNamespace)**: `CRM/crm-package/source/DirRX.CRMDocuments/DirRX.CRMDocuments.Shared/Module.mtd`
 - **Guide 25**: `knowledge-base/guides/25_code_patterns.md` (IsolatedArea-паттерны)

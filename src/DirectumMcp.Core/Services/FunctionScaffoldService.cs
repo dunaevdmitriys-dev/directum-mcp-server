@@ -49,6 +49,7 @@ public class FunctionScaffoldService : IPipelineStep
         bool isRemote = false,
         string? body = null,
         string? description = null,
+        string? webApiRequestType = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(modulePath))
@@ -63,6 +64,17 @@ public class FunctionScaffoldService : IPipelineStep
         side = side.ToLowerInvariant();
         if (side is not ("server" or "client" or "shared"))
             return Fail("Параметр `side` должен быть 'server', 'client' или 'shared'.");
+
+        // WebAPI functions must be server-side and public
+        if (!string.IsNullOrWhiteSpace(webApiRequestType))
+        {
+            side = "server";
+            isPublic = true;
+        }
+
+        // Remote-функции всегда живут на сервере (вызываются с клиента через Functions.Module.Remote.*)
+        if (isRemote && side == "client")
+            side = "server";
 
         var parsedParams = ParseParameters(parameters);
         var createdFiles = new List<string>();
@@ -131,7 +143,7 @@ public class FunctionScaffoldService : IPipelineStep
 
         // Generate function code
         var functionCode = GenerateFunctionCode(
-            functionName, returnType, parsedParams, side, isPublic, isRemote, body, description);
+            functionName, returnType, parsedParams, side, isPublic, isRemote, body, description, webApiRequestType);
 
         // Insert into existing file or create new
         if (File.Exists(fullPath))
@@ -148,17 +160,24 @@ public class FunctionScaffoldService : IPipelineStep
             createdFiles.Add(targetFile);
         }
 
-        // Update Module.mtd PublicFunctions if isPublic
-        if (isPublic && side == "server")
+        // Update Module.mtd — register function in PublicFunctions (public/remote)
+        // and in Functions section (all server functions need registration)
+        var mtdPath = FindModuleMtd(modulePath, moduleName);
+        if (mtdPath != null && side == "server")
         {
-            var mtdPath = FindModuleMtd(modulePath, moduleName);
-            if (mtdPath != null)
+            if (isPublic || isRemote)
             {
                 mtdUpdated = await UpdateModuleMtdPublicFunctions(
-                    mtdPath, functionName, returnType, parsedParams, isRemote, ct);
-                if (mtdUpdated)
-                    modifiedFiles.Add("Module.mtd");
+                    mtdPath, functionName, returnType, parsedParams, isRemote, webApiRequestType, ct);
             }
+
+            var mtdFuncRegistered = await RegisterFunctionInMtd(
+                mtdPath, functionName, returnType, parsedParams,
+                entityName, isRemote, webApiRequestType, ct);
+            mtdUpdated = mtdUpdated || mtdFuncRegistered;
+
+            if (mtdUpdated)
+                modifiedFiles.Add("Module.mtd");
         }
 
         return new ScaffoldFunctionResult
@@ -189,6 +208,7 @@ public class FunctionScaffoldService : IPipelineStep
             isRemote: GetBool(parameters, "isRemote"),
             body: GetStrOrNull(parameters, "body"),
             description: GetStrOrNull(parameters, "description"),
+            webApiRequestType: GetStrOrNull(parameters, "webApiRequestType"),
             ct: ct);
     }
 
@@ -196,7 +216,8 @@ public class FunctionScaffoldService : IPipelineStep
 
     private static string GenerateFunctionCode(
         string functionName, string returnType, List<ParamDef> parameters,
-        string side, bool isPublic, bool isRemote, string? body, string? description)
+        string side, bool isPublic, bool isRemote, string? body, string? description,
+        string? webApiRequestType = null)
     {
         var sb = new StringBuilder();
 
@@ -209,25 +230,34 @@ public class FunctionScaffoldService : IPipelineStep
         }
 
         // Attributes
-        var attrs = new List<string>();
         if (side == "server")
         {
-            if (isRemote) attrs.Add("Remote");
-            if (isPublic) attrs.Add("Public");
-        }
-        else if (side == "client")
-        {
-            attrs.Add($"LocalizeFunction(\"{functionName}FunctionName\", \"\")");
-        }
+            if (isRemote)
+                sb.AppendLine("        [Remote]");
 
-        if (attrs.Count > 0)
-            sb.AppendLine($"        [{string.Join(", ", attrs)}]");
+            if (isPublic)
+            {
+                if (!string.IsNullOrWhiteSpace(webApiRequestType))
+                {
+                    // WebAPI endpoint: [Public(WebApiRequestType = RequestType.Get/Post)]
+                    sb.AppendLine($"        [Public(WebApiRequestType = RequestType.{webApiRequestType})]");
+                }
+                else
+                {
+                    // Regular public function: [Public]
+                    sb.AppendLine("        [Public]");
+                }
+            }
+        }
+        // Client-side functions in Directum RX don't use special attributes
 
         // Signature
+        // WebAPI functions must be `public virtual` (instance methods), not static
         var csReturnType = MapToCsType(returnType);
         var csParams = string.Join(", ", parameters.Select(p => $"{MapToCsType(p.Type)} {p.Name}"));
-        var isStatic = side == "server" && string.IsNullOrWhiteSpace(body) ? "static " : "";
-        var isVirtual = side == "client" ? "virtual " : "";
+        var isWebApi = !string.IsNullOrWhiteSpace(webApiRequestType);
+        var isStatic = side == "server" && !isRemote && !isWebApi && string.IsNullOrWhiteSpace(body) ? "static " : "";
+        var isVirtual = (side == "client" || (side == "server" && (isRemote || isWebApi))) ? "virtual " : "";
 
         sb.Append($"        public {isStatic}{isVirtual}{csReturnType} {functionName}({csParams})");
 
@@ -307,7 +337,8 @@ public class FunctionScaffoldService : IPipelineStep
 
     private static async Task<bool> UpdateModuleMtdPublicFunctions(
         string mtdPath, string functionName, string returnType,
-        List<ParamDef> parameters, bool isRemote, CancellationToken ct)
+        List<ParamDef> parameters, bool isRemote, string? webApiRequestType,
+        CancellationToken ct)
     {
         try
         {
@@ -331,6 +362,7 @@ public class FunctionScaffoldService : IPipelineStep
 
             var funcObj = new JsonObject
             {
+                ["NameGuid"] = Guid.NewGuid().ToString("D"),
                 ["Name"] = functionName,
                 ["Placement"] = "Server",
                 ["IsRemote"] = isRemote,
@@ -358,6 +390,12 @@ public class FunctionScaffoldService : IPipelineStep
                 funcObj["Parameters"] = paramsArray;
             }
 
+            // Add WebApiRequestType for WebAPI endpoints (matches platform MTD format)
+            if (!string.IsNullOrWhiteSpace(webApiRequestType))
+            {
+                funcObj["WebApiRequestType"] = webApiRequestType;
+            }
+
             publicFunctions.Add(funcObj);
 
             var options = new JsonSerializerOptions { WriteIndented = true };
@@ -370,27 +408,137 @@ public class FunctionScaffoldService : IPipelineStep
         }
     }
 
+    /// <summary>
+    /// Registers the function in the Module.mtd (or Entity.mtd) Functions array.
+    /// Every server function needs a registration entry with a NameGuid.
+    /// </summary>
+    private static async Task<bool> RegisterFunctionInMtd(
+        string mtdPath, string functionName, string returnType,
+        List<ParamDef> parameters, string? entityName, bool isRemote,
+        string? webApiRequestType, CancellationToken ct)
+    {
+        try
+        {
+            // For entity-level functions, find the entity MTD instead
+            var targetMtdPath = mtdPath;
+            if (!string.IsNullOrWhiteSpace(entityName))
+            {
+                var dir = Path.GetDirectoryName(mtdPath);
+                if (dir != null)
+                {
+                    var parentDir = Path.GetDirectoryName(dir);
+                    if (parentDir != null)
+                    {
+                        var entityMtd = Directory.GetFiles(parentDir, $"{entityName}.mtd", SearchOption.AllDirectories)
+                            .FirstOrDefault();
+                        if (entityMtd != null)
+                            targetMtdPath = entityMtd;
+                    }
+                }
+            }
+
+            var json = await File.ReadAllTextAsync(targetMtdPath, ct);
+            var node = JsonNode.Parse(json);
+            if (node is not JsonObject root) return false;
+
+            // Get or create the Functions array
+            var functions = root["Functions"]?.AsArray();
+            if (functions == null)
+            {
+                functions = new JsonArray();
+                root["Functions"] = functions;
+            }
+
+            // Check if function already registered
+            foreach (var fn in functions)
+            {
+                if (fn?["Name"]?.GetValue<string>() == functionName)
+                    return false; // already registered
+            }
+
+            var funcEntry = new JsonObject
+            {
+                ["NameGuid"] = Guid.NewGuid().ToString("D"),
+                ["Name"] = functionName,
+                ["IsRemote"] = isRemote,
+            };
+
+            var resolvedReturn = ResolveGlobalType(returnType);
+            if (!string.IsNullOrEmpty(resolvedReturn))
+            {
+                funcEntry["ReturnType"] = resolvedReturn;
+                funcEntry["ReturnTypeFullName"] = ResolveTypeFullName(returnType);
+            }
+
+            if (parameters.Count > 0)
+            {
+                var paramsArray = new JsonArray();
+                foreach (var p in parameters)
+                {
+                    paramsArray.Add(new JsonObject
+                    {
+                        ["NameGuid"] = Guid.NewGuid().ToString("D"),
+                        ["Name"] = p.Name,
+                        ["ParameterType"] = ResolveGlobalType(p.Type),
+                        ["ParameterTypeFullName"] = ResolveTypeFullName(p.Type)
+                    });
+                }
+                funcEntry["Parameters"] = paramsArray;
+            }
+
+            // Add WebApiRequestType for WebAPI endpoints (matches platform MTD format)
+            if (!string.IsNullOrWhiteSpace(webApiRequestType))
+            {
+                funcEntry["WebApiRequestType"] = webApiRequestType;
+            }
+
+            functions.Add(funcEntry);
+
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            await File.WriteAllTextAsync(targetMtdPath, node.ToJsonString(options), ct);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     #endregion
 
     #region Type Resolution
+
+    private static readonly Dictionary<string, string> CsTypeMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["string"] = "string",
+        ["int"] = "int",
+        ["long"] = "long",
+        ["bool"] = "bool",
+        ["double"] = "double",
+        ["decimal"] = "decimal",
+        ["datetime"] = "DateTime",
+        ["guid"] = "Guid",
+    };
 
     private static string MapToCsType(string type)
     {
         if (string.IsNullOrWhiteSpace(type) || type.Equals("void", StringComparison.OrdinalIgnoreCase))
             return "void";
 
-        return type switch
+        if (CsTypeMap.TryGetValue(type, out var mapped))
+            return mapped;
+
+        // Handle generic types like List<datetime> → List<DateTime>
+        foreach (var kvp in CsTypeMap)
         {
-            "string" => "string",
-            "int" => "int",
-            "long" => "long",
-            "bool" => "bool",
-            "double" => "double",
-            "decimal" => "decimal",
-            "DateTime" => "DateTime",
-            "Guid" => "Guid",
-            _ => type // IQueryable<IDeal>, List<string>, etc. — pass through
-        };
+            type = Regex.Replace(
+                type,
+                $@"(?<!\w){Regex.Escape(kvp.Key)}(?!\w)",
+                kvp.Value,
+                RegexOptions.IgnoreCase);
+        }
+
+        return type;
     }
 
     private static string ResolveGlobalType(string type)

@@ -262,7 +262,7 @@ FROM {table} WHERE status = 'Active';
 ```bash
 # Из _ConfigSettings.xml
 # Из Docker PostgreSQL (стандартное подключение):
-# Host=localhost;Port=5432;Database=directum;Username=directum;Password=directum
+# Host=localhost;Port=5432;Database=directum;Username=directum;Password=<POSTGRES_PASSWORD>
 
 # Или из конфига launcher:
 grep -r "ConnectionString" 26.1.20260320.1846/DirectumLauncher/etc/_services_config/

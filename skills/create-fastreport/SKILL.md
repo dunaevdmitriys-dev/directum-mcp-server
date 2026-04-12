@@ -11,11 +11,10 @@ description: "Создать FastReport-отчёт Directum RX: .mtd + .frx + о
 ## ШАГ 0: Реальные пути CRM-отчётов
 
 ```
-# Определи WORKSPACE как корень рабочего пространства (pwd в корне репозитория).
-# MODULE — путь к целевому модулю: {package_path}/source/{CompanyCode}.{ModuleName}
-# Найди аналог через: Glob("{package_path}/source/*/Reports") или MCP: search_metadata name=Report
+WORKSPACE = $(pwd)  # определяется автоматически
+MODULE    = $WORKSPACE/{package_path}/source/{ModuleName}  # найди через Glob или search_metadata
 
-Существующие отчёты (reference, пример — CRM):
+Существующие отчёты (reference):
   SalesFunnelReport    — воронка продаж (PDF/Excel, этапы + конверсия)
   DealsByManagerReport — сделки по менеджерам (Excel/PDF, группировка)
   LeadSourceReport     — источники лидов
@@ -468,7 +467,7 @@ document.Save();
 
 ```
 scaffold_report
-  modulePath="{package_path}/source/{CompanyCode}.{ModuleName}"
+  modulePath="$WORKSPACE/CRM/crm-package/source/DirRX.CRM"
   reportName="ConversionReport"
   moduleName="DirRX.CRM"
   russianName="Отчёт по конверсии"
@@ -478,7 +477,7 @@ scaffold_report
 ### validate_report
 
 ```
-validate_report path="{package_path}/source/{ModuleName}/{ModuleName}.Server/Reports/{ReportName}"
+validate_report path="$WORKSPACE/CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Server/Reports/SalesFunnelReport"
 ```
 
 ---
@@ -488,4 +487,4 @@ validate_report path="{package_path}/source/{ModuleName}/{ModuleName}.Server/Rep
 - `knowledge-base/guides/13_reports.md` — Guide 13: паттерны отчётов, события, макет, API
 - `knowledge-base/guides/30_reports_advanced.md` — Guide 30: продвинутые сценарии (если существует)
 - `docs/platform/DDS_KNOWN_ISSUES.md` — Known Issue #13: обязательные DisplayName для отчётов
-- Реальные отчёты: найди через Glob("{package_path}/source/*/Reports/")
+- Реальные отчёты: `CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Shared/Reports/` (6 отчётов)

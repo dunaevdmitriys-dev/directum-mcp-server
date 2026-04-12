@@ -27,7 +27,7 @@ public class CoverFixTools
                  "Добавляет ключи _Title_ и _Description_ в sungero_settingslayer_localization. " +
                  "Требует прямого доступа к PostgreSQL.")]
     public async Task<string> FixCoverLocalization(
-        [Description("Connection string к PostgreSQL. Пример: Host=85.198.82.172;Port=5432;Database=directum;Username=directum;Password=directum")]
+        [Description("Connection string к PostgreSQL. Пример: Host=localhost;Port=5432;Database=directum;Username=postgres;Password=<PASSWORD>")]
         string connectionString,
         [Description("UUID модуля (explorerModuleUuid из URL #/sat/cover/<UUID>). Если пусто — диагностика всех модулей.")]
         string moduleUuid = "",

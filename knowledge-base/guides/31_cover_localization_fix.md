@@ -102,7 +102,7 @@ docker restart sungerowebserver_directum
 
 ---
 
-## Готовые данные для CRM-модулей (VPS 72.56.13.32)
+## Готовые данные для CRM-модулей (VPS <YOUR_VPS_IP>)
 
 ### CRM (основной модуль)
 

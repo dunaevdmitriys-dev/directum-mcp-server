@@ -222,7 +222,7 @@ Incompatibility check. Applied packages incompatibility. You must re-deploy all 
 ./do.sh dt deploy --package="/srv/Dev.dat" --force
 
 # С другим пользователем
-./do.sh dt deploy --package="/srv/Dev.dat" --user="Administrator" --password="11111"
+./do.sh dt deploy --package="/srv/Dev.dat" --user="Administrator" --password="<PASSWORD>"
 
 # С параллельной обработкой тенантов
 ./do.sh dt deploy --package="/srv/Dev.dat" --parallel_tenants=5
@@ -872,7 +872,7 @@ do dt get_deployed_solutions
 
 ```bash
 # Экспорт текущих настроек
-./do.sh dt export_settings --path="/home/user/settings/" --user="Administrator" --password="11111"
+./do.sh dt export_settings --path="/home/user/settings/" --user="Administrator" --password="<PASSWORD>"
 
 # Импорт настроек на другой стенд
 ./do.sh dt import_settings --path="/home/user/settings/settings-2026-03-28_10-00-00.datx"

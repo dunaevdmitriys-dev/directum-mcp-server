@@ -16,11 +16,9 @@ description: "Управление сервисами Directum RX через Dir
 
 ### 1. Определи launcher_path
 ```bash
-# Определи путь к Launcher через переменную окружения LAUNCHER_PATH
-# или найди дистрибутив в рабочем пространстве:
-#   Glob("дистрибутив/DirectumLauncher/do.sh") или Glob("дистрибутив/launcher/do.sh")
-LAUNCHER="${LAUNCHER_PATH:-$(pwd)/дистрибутив/launcher}"
-# Альтернатива: LAUNCHER="$(pwd)/дистрибутив/DirectumLauncher"
+WORKSPACE="$(pwd)"  # корень рабочего пространства
+LAUNCHER="${LAUNCHER_PATH:-$WORKSPACE/дистрибутив/launcher}"
+# Определи LAUNCHER_PATH через env var или найди: ls $WORKSPACE/дистрибутив/
 ```
 
 ### 2. Выполни действие

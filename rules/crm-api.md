@@ -12,10 +12,7 @@ paths:
 - **Middleware** в `Middleware.cs`: ApiVersionMiddleware, CorrelationIdMiddleware
 
 ## Правила разработки
-- Auth: token в localStorage (Bearer header), НЕ JWT в Zustand memory
-- SSO endpoint: `GET /api/auth/sso?user=LoginName` — аутентификация по имени пользователя RX
-- OData: все ответы CallWebApiGetAsync/PostAsync автоматически разворачиваются через `UnwrapODataValue()` (убирает обёртку `{ value: [...] }`)
-- client.ts: Axios с Bearer token из localStorage, auto-attach на каждый запрос
+- JWT HS256: access 15min + refresh 7d + rotation (max 5 tokens/user)
 - OData к RX: ВСЕГДА через Polly (retry 3x exponential + circuit breaker 50%/15s)
 - SQL: ТОЛЬКО NpgsqlParameter, никаких конкатенаций
 - Rate limiting: 30/min auth, 600/min API

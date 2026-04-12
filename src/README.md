@@ -195,7 +195,7 @@ dotnet test
       "env": {
         "RX_ODATA_URL": "http://localhost/Integration/odata",
         "RX_USERNAME": "Administrator",
-        "RX_PASSWORD": "11111"
+        "RX_PASSWORD": "${RX_PASSWORD}"
       }
     }
   }

@@ -54,4 +54,27 @@ public static class JsonElementExtensions
             ? val.GetString() ?? ""
             : "";
     }
+
+    /// <summary>
+    /// Safe TryGetProperty that returns false for Null/non-Object elements.
+    /// Prevents InvalidOperationException when calling TryGetProperty on JsonValueKind.Null.
+    /// </summary>
+    public static bool TryGetPropertySafe(this JsonElement el, string propertyName, out JsonElement value)
+    {
+        if (el.ValueKind == JsonValueKind.Object)
+            return el.TryGetProperty(propertyName, out value);
+
+        value = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if the element is a non-null JSON object (safe to call TryGetProperty on).
+    /// </summary>
+    public static bool IsObject(this JsonElement el) => el.ValueKind == JsonValueKind.Object;
+
+    /// <summary>
+    /// Returns true if the element is a non-null JSON array (safe to call EnumerateArray on).
+    /// </summary>
+    public static bool IsArray(this JsonElement el) => el.ValueKind == JsonValueKind.Array;
 }

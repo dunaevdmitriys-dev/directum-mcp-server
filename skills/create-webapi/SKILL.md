@@ -1,5 +1,5 @@
 ---
-description: "Создать WebAPI endpoint Directum RX — GET/POST, CommonResponse обёртка, DTO-структуры, ролевая проверка"
+description: "Создать WebAPI endpoint Directum RX — GET/POST, DTO-структуры, ролевая проверка"
 ---
 
 > Подробнее о поиске примеров: `docs/platform/REFERENCE_CODE.md` | `dds-examples-map.md`
@@ -12,19 +12,79 @@ description: "Создать WebAPI endpoint Directum RX — GET/POST, CommonRes
 
 | Файл | Путь |
 |------|------|
-| **WebAPI (8 endpoints, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleServerFunctions.cs` (если доступен) |
-| **CommonResponse структура** | `targets/source/DirRX.Targets/DirRX.Targets.Shared/Module.mtd` секция PublicStructures (если доступен) |
-| **Документация** | `targets/CODE_PATTERNS_CATALOG.md` секция 2 (если доступен) |
+| **WebAPI (8 endpoints, эталон)** | `targets/source/DirRX.KPI/DirRX.KPI.Server/ModuleServerFunctions.cs` |
+| **CommonResponse структура** | `targets/source/DirRX.Targets/DirRX.Targets.Shared/Module.mtd` секция PublicStructures |
+| **Документация** | `targets/CODE_PATTERNS_CATALOG.md` секция 2 |
+
+**Паттерн ICommonResponse (ЛУЧШЕ чем JSON строки):**
+```csharp
+[Public(WebApiRequestType = RequestType.Post)]
+public Structures.Module.ICommonResponse SaveMetricActualValues(string requestData)
+{
+  var response = Structures.Module.CommonResponse.Create();
+  response.IsSuccess = true;
+  try
+  {
+    // бизнес-логика
+  }
+  catch (Exception ex)
+  {
+    response.IsSuccess = false;
+    response.Message = ex.Message;
+    Logger.Error("SaveMetricActualValues failed", ex);
+  }
+  return response;
+}
+
+// GET — возвращает типизированную структуру (не строку!)
+[Public(WebApiRequestType = RequestType.Get)]
+public Structures.Module.IChartData GetChartData(long metricId, string period)
+```
+
+**Кросс-модульные DTO:** `DirRX.Targets.Structures.Module.ICommonResponse` — можно использовать DTO из другого модуля.
 
 ### Приоритет 2 — CRM (JSON строки, 30+ endpoints)
 
 **Эталон: DirRX.CRM.Server/ModuleServerFunctions.cs** — 30+ WebAPI endpoints (GET/POST), DTO через Structures, JSON сериализация.
 
-| Файл | Путь (от `{package_path}/source/`) |
+| Файл | Путь (от `CRM/crm-package/source/`) |
 |------|------|
 | **WebAPI endpoints** | `DirRX.CRM/DirRX.CRM.Server/ModuleServerFunctions.cs` |
 | **PublicStructures (22 DTO)** | `DirRX.CRM/DirRX.CRM.Shared/Module.mtd` — PipelineDto, StageDto, DealDto, ... |
 | **ModuleConstants** | `DirRX.CRM/DirRX.CRM.Shared/ModuleConstants.cs` — Roles GUIDs |
+
+**Реальные примеры из ModuleServerFunctions.cs:**
+```csharp
+// GET — LoadPipeline: возвращает JSON строку с полным DTO воронки
+[Public(WebApiRequestType = RequestType.Get)]
+public string LoadPipeline(long pipelineId, long responsibleId, string periodStart, string periodEnd)
+
+// POST — MoveDealToStage: изменяет данные, возвращает JSON
+[Public(WebApiRequestType = RequestType.Post)]
+public string MoveDealToStage(long dealId, long newStageId, int position)
+
+// GET — GetCustomer360: Card-данные для RC
+[Public(WebApiRequestType = RequestType.Get)]
+public string GetCustomer360(long counterpartyId)
+
+// POST — GetDashboardKPIs: сложная аналитика
+[Public(WebApiRequestType = RequestType.Post)]
+public string GetDashboardKPIs(long pipelineId, string periodStart, string periodEnd, long departmentId)
+```
+
+**Паттерн доступа (из CRM):**
+```csharp
+if (!HasCRMAccess())
+  return "{\"error\":\"Access denied\"}";
+```
+
+**Паттерн DTO (из CRM):**
+```csharp
+var dto = Structures.Module.StageDto.Create();
+dto.Id = stage.Id;
+dto.Name = stage.Name;
+// ... заполнение полей
+```
 
 **IntegrationServiceName** в MTD (определяет URL WebAPI): `"CRMDocumentsProposalApprovalTask"` → `/Integration/odata/CRMDocumentsProposalApprovalTask`.
 Используй `MCP: predict_odata_name` для предсказания.
@@ -60,7 +120,7 @@ source/{Company}.{Module}/
     ModuleServerFunctions.cs        # WebAPI функция [Public(WebApiRequestType = ...)]
   {Company}.{Module}.Shared/
     ModuleStructures.cs             # [Public] partial class DTO (если нужны)
-    Module.mtd                      # PublicStructures секция (CommonResponse + бизнес-DTO)
+    Module.mtd                      # PublicStructures секция (если нужны DTO)
 ```
 
 ## Алгоритм
@@ -82,68 +142,9 @@ MCP: check_package packagePath={путь_к_пакету}
 MCP: analyze_solution action=api
 ```
 
-### 1. Создай CommonResponse структуру (ОБЯЗАТЕЛЬНО)
+### 1. Определи тип DTO
 
-> **Production-паттерн из Targets.** Все WebAPI endpoints ДОЛЖНЫ возвращать обёрнутый ответ с `IsSuccess` + `Message`, а не голые типы или JSON-строки.
-
-**Module.mtd (PublicStructures) — добавь CommonResponse:**
-```json
-"PublicStructures": [
-  {
-    "Name": "CommonResponse",
-    "IsPublic": true,
-    "Properties": [
-      { "Name": "IsSuccess", "TypeFullName": "global::System.Boolean" },
-      { "Name": "Message", "IsNullable": true, "TypeFullName": "global::System.String" }
-    ],
-    "StructureNamespace": "{Company}.{Module}.Structures.Module"
-  }
-]
-```
-
-**ModuleStructures.cs:**
-```csharp
-namespace {Company}.{Module}.Structures.Module
-{
-  [Public]
-  partial class CommonResponse
-  {
-    public bool IsSuccess { get; set; }
-    public string Message { get; set; }
-  }
-}
-```
-
-Если endpoint возвращает данные (не только статус), создай расширенную структуру с полем `Data`:
-```json
-{
-  "Name": "DataResponse",
-  "IsPublic": true,
-  "Properties": [
-    { "Name": "IsSuccess", "TypeFullName": "global::System.Boolean" },
-    { "Name": "Message", "IsNullable": true, "TypeFullName": "global::System.String" },
-    { "Name": "Data", "IsNullable": true, "TypeFullName": "global::System.String" }
-  ],
-  "StructureNamespace": "{Company}.{Module}.Structures.Module"
-}
-```
-
-### 2. Создай бизнес-DTO (если нужны)
-
-Если endpoint работает со сложными объектами — создай Public Structure для входных/выходных данных:
-
-**Module.mtd (PublicStructures) — бизнес-DTO:**
-```json
-{
-  "Name": "{DtoName}",
-  "IsPublic": true,
-  "Properties": [
-    { "Name": "Id", "TypeFullName": "global::System.Int64" },
-    { "Name": "Name", "IsNullable": true, "TypeFullName": "global::System.String" }
-  ],
-  "StructureNamespace": "{Company}.{Module}.Structures.Module"
-}
-```
+Если возвращается сложный объект — создай Public Structure:
 
 **ModuleStructures.cs:**
 ```csharp
@@ -159,186 +160,113 @@ namespace {Company}.{Module}.Structures.Module
 }
 ```
 
-**Кросс-модульные DTO:** `DirRX.Targets.Structures.Module.ICommonResponse` — можно использовать DTO из другого модуля.
-
-### 3. Создай WebAPI функцию (production-паттерн)
-
-> **КЛЮЧЕВОЕ ПРАВИЛО:** Каждый endpoint оборачивает результат в CommonResponse. Null-check + return с ошибкой (не exception). Логирование через `Logger.WithLogger()`.
-
-**POST-эндпоинт (production-паттерн из Targets):**
-```csharp
-/// <summary>
-/// Описание что делает endpoint.
-/// </summary>
-[Public(WebApiRequestType = RequestType.Post)]
-public virtual Structures.Module.ICommonResponse {FunctionName}({params})
-{
-  var response = Structures.Module.CommonResponse.Create();
-  response.IsSuccess = true;
-
-  // 1. Null-check + ранний возврат с ошибкой (НЕ бросай exception)
-  var entity = {Company}.{Module}.{Entities}.GetAll(e => e.Id == entityId).FirstOrDefault();
-  if (entity == null)
+**Module.mtd (PublicStructures):**
+```json
+"PublicStructures": [
   {
-    response.IsSuccess = false;
-    response.Message = {Company}.{Module}.Resources.EntityNotFound;
-    Logger.WithLogger("{Module}").Debug("{FunctionName}: entity not found, id={0}", entityId);
-    return response;
+    "Name": "{DtoName}",
+    "IsPublic": true,
+    "Properties": [
+      { "Name": "Id", "TypeFullName": "global::System.Int64" },
+      { "Name": "Name", "IsNullable": true, "TypeFullName": "global::System.String" }
+    ],
+    "StructureNamespace": "{Company}.{Module}.Structures.Module"
   }
-
-  // 2. Ролевая проверка (если нужна)
-  if (!Users.Current.IncludedIn(PublicConstants.Module.RolesGroup.Administrators))
-  {
-    response.IsSuccess = false;
-    response.Message = {Company}.{Module}.Resources.AccessDenied;
-    Logger.WithLogger("{Module}").Debug("{FunctionName}: access denied for user {0}", Users.Current.Name);
-    return response;
-  }
-
-  // 3. Бизнес-логика в try/catch
-  try
-  {
-    // ... бизнес-логика ...
-    entity.Save();
-    response.Message = "OK";
-  }
-  catch (Exception ex)
-  {
-    response.IsSuccess = false;
-    response.Message = ex.Message;
-    Logger.WithLogger("{Module}").Error("{FunctionName}: {0}", ex.Message);
-  }
-
-  return response;
-}
+]
 ```
 
-**GET-эндпоинт (возвращает данные через DataResponse):**
+### 2. Создай WebAPI функцию
+
+**GET-эндпоинт** (реальный паттерн из `GetCustomer360`):
 ```csharp
 /// <summary>
-/// Получить данные сущности.
+/// Get Customer 360 data.
 /// </summary>
 [Public(WebApiRequestType = RequestType.Get)]
-public virtual Structures.Module.IDataResponse {FunctionName}(long entityId)
+public string GetCustomer360(long counterpartyId)
 {
-  var response = Structures.Module.DataResponse.Create();
-  response.IsSuccess = true;
+  if (!HasCRMAccess())
+    return "{\"error\":\"Access denied\"}";
 
-  var entity = {Company}.{Module}.{Entities}.GetAll(e => e.Id == entityId).FirstOrDefault();
-  if (entity == null)
-  {
-    response.IsSuccess = false;
-    response.Message = {Company}.{Module}.Resources.EntityNotFound;
-    Logger.WithLogger("{Module}").Debug("{FunctionName}: not found {0}", entityId);
-    return response;
-  }
+  var counterparty = Sungero.Parties.Counterparties.Get(counterpartyId);
+  if (counterparty == null)
+    return string.Empty;
 
-  try
-  {
-    var dto = Structures.Module.{DtoName}.Create();
-    dto.Id = entity.Id;
-    dto.Name = entity.Name;
-    // ... заполнение полей
+  var deals = DirRX.CRMSales.Deals.GetAll()
+    .Where(d => d.Counterparty != null && d.Counterparty.Id == counterpartyId)
+    .ToList();
 
-    // Сериализуем данные в Data
-    response.Data = JsonConvert.SerializeObject(dto);
-  }
-  catch (Exception ex)
-  {
-    response.IsSuccess = false;
-    response.Message = ex.Message;
-    Logger.WithLogger("{Module}").Error("{FunctionName}: {0}", ex.Message);
-  }
+  var dto = Structures.Module.Customer360Dto.Create();
+  dto.CounterpartyId = counterpartyId;
+  dto.CounterpartyName = counterparty.Name;
+  dto.TotalDeals = deals.Count;
+  // ... заполнение полей
 
-  return response;
+  return Customer360DtoToJson(dto);
 }
 ```
 
-**GET-эндпоинт (возвращает типизированную структуру напрямую):**
+**POST-эндпоинт** (реальный паттерн из `MoveDealToStage`):
 ```csharp
 /// <summary>
-/// Получить данные графика.
+/// Move deal to a new stage (drag-and-drop).
 /// </summary>
-[Public(WebApiRequestType = RequestType.Get)]
-public virtual Structures.Module.I{DtoName} {FunctionName}(long entityId, string period)
-{
-  // Для GET с типизированным DTO — тоже можно,
-  // но предпочтительнее CommonResponse/DataResponse обёртка
-  var dto = Structures.Module.{DtoName}.Create();
-  // ... заполнение
-  return dto;
-}
-```
-
-### 4. Логирование (ОБЯЗАТЕЛЬНО)
-
-> **Паттерн Logger.WithLogger() из Targets.** НЕ используй `Logger.Error(...)` без WithLogger.
-
-```csharp
-// Правильно — WithLogger с именем модуля:
-Logger.WithLogger("{Module}").Debug("{FunctionName}: started, id={0}", entityId);
-Logger.WithLogger("{Module}").Error("{FunctionName}: failed — {0}", ex.Message);
-
-// Неправильно — без WithLogger:
-// Logger.Error("...");  // НЕ ДЕЛАЙ ТАК
-```
-
-### 5. Ролевая проверка (если нужна)
-
-```csharp
-// Через GUID роли из ModuleConstants:
-var roleGuid = PublicConstants.Module.RolesGroup.{RoleName};
-if (!Users.Current.IncludedIn(roleGuid))
-{
-  response.IsSuccess = false;
-  response.Message = Resources.AccessDenied;
-  return response;
-}
-```
-
-### 6. Типы возврата
-
-| Тип | Return type | Когда использовать |
-|-----|-------------|-------------------|
-| **CommonResponse** | `Structures.Module.ICommonResponse` | POST без данных (создание, обновление, удаление) |
-| **DataResponse** | `Structures.Module.IDataResponse` | GET/POST с данными (Data = JSON-строка) |
-| **Типизированный DTO** | `Structures.Module.I{DtoName}` | GET с конкретной структурой |
-| **Список DTO** | `List<Structures.Module.I{DtoName}>` | GET — список объектов |
-
-> **ПРЕДПОЧТИТЕЛЬНО:** CommonResponse/DataResponse обёртка. Голые `string` return-ы с JSON — устаревший паттерн CRM, НЕ копировать.
-
-## Антипаттерны (НЕ ДЕЛАЙ ТАК)
-
-```csharp
-// ПЛОХО: голая строка без обёртки
 [Public(WebApiRequestType = RequestType.Post)]
-public string DoSomething(long id)
+public string MoveDealToStage(long dealId, long newStageId, int position)
 {
-  return "{\"error\":\"not found\"}";  // НЕТ! Используй CommonResponse
-}
+  if (!HasCRMAccess())
+    return "{\"error\":\"Access denied\"}";
 
-// ПЛОХО: exception вместо раннего return
-[Public(WebApiRequestType = RequestType.Post)]
-public virtual Structures.Module.ICommonResponse DoSomething(long id)
-{
-  var entity = Entities.Get(id);
-  if (entity == null)
-    throw new Exception("Not found");  // НЕТ! Верни response.IsSuccess = false
-}
+  var deal = DirRX.CRMSales.Deals.Get(dealId);
+  if (deal == null)
+    return string.Empty;
 
-// ПЛОХО: Logger без WithLogger
-Logger.Error("something failed");  // НЕТ! Logger.WithLogger("Module").Error(...)
+  var newStage = DirRX.CRMSales.Stages.Get(newStageId);
+  if (newStage == null)
+    return string.Empty;
+
+  deal.Stage = newStage;
+  deal.LastStageChangeDate = Calendar.Now;
+  deal.Save();
+
+  // Fire async handler
+  var asyncHandler = DirRX.CRM.AsyncHandlers.DealStageChanged.Create();
+  asyncHandler.DealId = deal.Id;
+  asyncHandler.ExecuteAsync();
+
+  return DealDtoToJson(BuildDealDto(deal));
+}
 ```
+
+### 3. Ролевая проверка (если нужна)
+
+```csharp
+[Public(WebApiRequestType = Sungero.Core.RequestType.Post)]
+public List<Structures.Module.I{DtoName}> {FunctionName}({params})
+{
+  var adminGuid = PublicConstants.Module.RolesGroup.Administrators;
+  if (!Users.Current.IncludedIn(adminGuid))
+    return new List<Structures.Module.I{DtoName}>();
+
+  // ... основная логика
+}
+```
+
+### 4. Типы возврата
+
+| Тип | Пример | Паттерн |
+|-----|--------|---------|
+| Примитив | `long?`, `string` | Прямой return |
+| Список примитивов | `List<string>` | `.Select().ToList()` |
+| DTO | `Structures.Module.I{Dto}` | `{Dto}.Create(...)` |
+| Список DTO | `List<Structures.Module.I{Dto}>` | `.Select(e => {Dto}.Create(...)).ToList()` |
+| JSON строка | `string` | `JsonConvert.SerializeObject(result)` |
 
 ## Валидация
 
 - [ ] `[Public(WebApiRequestType = ...)]` на функции
-- [ ] Возвращает `ICommonResponse` / `IDataResponse` (не голую строку)
-- [ ] CommonResponse PublicStructure есть в Module.mtd
 - [ ] DTO: `[Public] partial class` + MTD PublicStructures
 - [ ] Return тип — `I{DtoName}` (интерфейс, не класс)
-- [ ] Null-check + `response.IsSuccess = false` + return (не exception)
-- [ ] `Logger.WithLogger("{Module}")` для всех логов
 - [ ] `GetAll()` с `.Where()` (никогда без фильтра)
 - [ ] Ролевая проверка через `Users.Current.IncludedIn(guid)`, НЕ `is`/`as`
 - [ ] `using Newtonsoft.Json;` если используется сериализация

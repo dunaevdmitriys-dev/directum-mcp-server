@@ -8,10 +8,10 @@
 
 | Что | Путь |
 |-----|------|
-| CoverEntityListAction (7 штук) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/Module.mtd` (найди аналог через Glob или search_metadata) |
-| CoverFunctionAction (OpenSalesFunnelReport, OpenCRMApp) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/Module.mtd` (CoverFunctionAction секция) |
-| Cover Groups + Tabs | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/Module.mtd` (Cover Groups + Tabs секция) |
-| ModuleSystem.resx (CoverAction_ / CoverGroup_ ключи) | `{package_path}/source/{ModuleName}/{ModuleName}.Shared/ModuleSystem.resx` (ключи CoverAction_ / CoverGroup_) |
+| CoverEntityListAction (7 штук) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.Shared/Module.mtd` строки 14-74 |
+| CoverFunctionAction (OpenSalesFunnelReport, OpenCRMApp) | `CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Shared/Module.mtd` строки 122-186 |
+| Cover Groups + Tabs | `CRM/crm-package/source/DirRX.CRM/DirRX.CRM.Shared/Module.mtd` строки 203-276 |
+| ModuleSystem.resx (CoverAction_ / CoverGroup_ ключи) | `CRM/crm-package/source/DirRX.CRMSales/DirRX.CRMSales.Shared/ModuleSystem.resx` |
 | Локализация через БД (sungero_settingslayer_localization) | Гайд `knowledge-base/guides/31_cover_localization_fix.md` |
 | Виджеты и обложки (общая теория) | Гайд `knowledge-base/guides/20_widgets_covers.md` |
 

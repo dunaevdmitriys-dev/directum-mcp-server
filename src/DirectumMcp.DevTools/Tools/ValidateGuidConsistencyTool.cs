@@ -14,7 +14,7 @@ public class ValidateGuidConsistencyTool
     [McpServerTool(Name = "validate_guid_consistency")]
     [Description("Cross-file GUID validation: Controls↔Properties, resx Form_GUID↔Forms, навигационные ссылки.")]
     public async Task<string> Execute(
-        [Description("Путь к директории модуля (например work/DirRX.CRMSales)")] string modulePath)
+        [Description("Путь к директории модуля (например source/DirRX.CRMSales)")] string modulePath)
     {
         if (!PathGuard.IsAllowed(modulePath))
             return PathGuard.DenyMessage(modulePath);
@@ -33,6 +33,7 @@ public class ValidateGuidConsistencyTool
 
         int totalErrors = 0;
         int totalWarnings = 0;
+        int totalInfos = 0;
         int parseErrors = 0;
 
         var entities = new List<(string Path, string Name, JsonDocument Doc)>();
@@ -69,10 +70,11 @@ public class ValidateGuidConsistencyTool
         // Check 1: Controls ↔ Properties GUID consistency
         sb.AppendLine("## 1. Controls ↔ Properties");
         sb.AppendLine();
-        var (c1errors, c1warnings) = CheckControlsProperties(sb, entities);
+        var (c1errors, c1warnings, c1infos) = CheckControlsProperties(sb, entities);
         totalErrors += c1errors;
         totalWarnings += c1warnings;
-        if (c1errors == 0 && c1warnings == 0)
+        totalInfos += c1infos;
+        if (c1errors == 0 && c1warnings == 0 && c1infos == 0)
             sb.AppendLine("PASS — все контролы ссылаются на существующие свойства");
         sb.AppendLine();
 
@@ -89,10 +91,11 @@ public class ValidateGuidConsistencyTool
         // Check 3: NavigationProperty EntityGuid references
         sb.AppendLine("## 3. NavigationProperty EntityGuid");
         sb.AppendLine();
-        var (c3errors, c3warnings) = CheckNavigationProperties(sb, entities, moduleDoc);
+        var (c3errors, c3warnings, c3infos) = CheckNavigationProperties(sb, entities, moduleDoc);
         totalErrors += c3errors;
         totalWarnings += c3warnings;
-        if (c3errors == 0 && c3warnings == 0)
+        totalInfos += c3infos;
+        if (c3errors == 0 && c3warnings == 0 && c3infos == 0)
             sb.AppendLine("PASS — все навигационные свойства ссылаются на существующие сущности");
         sb.AppendLine();
 
@@ -126,6 +129,7 @@ public class ValidateGuidConsistencyTool
         sb.AppendLine($"- **Сущностей**: {entities.Count}");
         sb.AppendLine($"- **Ошибок (ERROR)**: {totalErrors}");
         sb.AppendLine($"- **Предупреждений (WARN)**: {totalWarnings}");
+        sb.AppendLine($"- **Информационных (INFO)**: {totalInfos}");
         if (parseErrors > 0)
             sb.AppendLine($"- **Ошибок парсинга**: {parseErrors}");
 
@@ -140,25 +144,102 @@ public class ValidateGuidConsistencyTool
         return sb.ToString();
     }
 
-    private static (int errors, int warnings) CheckControlsProperties(
+    /// <summary>
+    /// Build a map of NameGuid → JsonDocument for all local entities (for BaseGuid chain resolution).
+    /// </summary>
+    private static Dictionary<string, JsonDocument> BuildGuidToDocMap(
+        List<(string Path, string Name, JsonDocument Doc)> entities)
+    {
+        var map = new Dictionary<string, JsonDocument>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, _, doc) in entities)
+        {
+            var guid = doc.RootElement.GetStringProp("NameGuid");
+            if (!string.IsNullOrEmpty(guid))
+                map[guid] = doc;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Collect property GUIDs from a single entity's Properties array.
+    /// </summary>
+    private static HashSet<string> CollectPropertyGuids(JsonElement root)
+    {
+        var guids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
+            foreach (var prop in props.EnumerateArray())
+                if (prop.TryGetProperty("NameGuid", out var ng))
+                    guids.Add(ng.GetString() ?? "");
+        return guids;
+    }
+
+    /// <summary>
+    /// Walk the BaseGuid inheritance chain and collect all inherited property GUIDs.
+    /// Returns true if the full chain was resolved (all ancestors found locally or no base).
+    /// Returns false if an ancestor was not found (platform type or external dependency).
+    /// </summary>
+    private static bool CollectInheritedPropertyGuids(
+        JsonElement root,
+        Dictionary<string, JsonDocument> guidToDoc,
+        HashSet<string> result)
+    {
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var current = root;
+
+        while (true)
+        {
+            var baseGuid = current.GetStringProp("BaseGuid");
+            if (string.IsNullOrEmpty(baseGuid))
+                break;
+
+            // Prevent infinite loops
+            if (!visited.Add(baseGuid))
+                break;
+
+            // Platform base type — we don't have its properties locally, but controls
+            // referencing platform properties are valid (inherited from Assignment, Task, etc.)
+            if (DirectumConstants.KnownBaseGuids.ContainsKey(baseGuid))
+                return false;
+
+            // Local entity in the same package
+            if (guidToDoc.TryGetValue(baseGuid, out var baseDoc))
+            {
+                var baseRoot = baseDoc.RootElement;
+                var baseProps = CollectPropertyGuids(baseRoot);
+                foreach (var pg in baseProps)
+                    result.Add(pg);
+                current = baseRoot;
+                continue;
+            }
+
+            // Base entity not found locally and not a known platform type — dependency module
+            return false;
+        }
+
+        return true;
+    }
+
+    private static (int errors, int warnings, int infos) CheckControlsProperties(
         StringBuilder sb, List<(string Path, string Name, JsonDocument Doc)> entities)
     {
-        int errors = 0, warnings = 0;
+        int errors = 0, warnings = 0, infos = 0;
+        var guidToDoc = BuildGuidToDocMap(entities);
 
         foreach (var (path, entityName, doc) in entities)
         {
             var root = doc.RootElement;
 
-            // Collect property GUIDs
-            var propertyGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (root.TryGetProperty("Properties", out var props) && props.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var prop in props.EnumerateArray())
-                {
-                    if (prop.TryGetProperty("NameGuid", out var ng))
-                        propertyGuids.Add(ng.GetString() ?? "");
-                }
-            }
+            // Collect local property GUIDs
+            var propertyGuids = CollectPropertyGuids(root);
+
+            // Collect inherited property GUIDs via BaseGuid chain
+            var inheritedGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var chainFullyResolved = CollectInheritedPropertyGuids(root, guidToDoc, inheritedGuids);
+
+            // Merge inherited into the full set
+            var allPropertyGuids = new HashSet<string>(propertyGuids, StringComparer.OrdinalIgnoreCase);
+            foreach (var ig in inheritedGuids)
+                allPropertyGuids.Add(ig);
 
             // Collect ControlGroup GUIDs
             var controlGroupGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -197,10 +278,19 @@ public class ValidateGuidConsistencyTool
                     if (ctrl.TryGetProperty("PropertyGuid", out var pgEl))
                     {
                         var pg = pgEl.GetString() ?? "";
-                        if (!string.IsNullOrEmpty(pg) && !propertyGuids.Contains(pg))
+                        if (!string.IsNullOrEmpty(pg) && !allPropertyGuids.Contains(pg))
                         {
-                            sb.AppendLine($"- **ERROR** `{entityName}.{ctrlName}`: PropertyGuid `{pg}` не найден в Properties");
-                            errors++;
+                            if (!chainFullyResolved)
+                            {
+                                // Chain ends at platform/external base — property likely inherited from ancestor
+                                sb.AppendLine($"- **INFO** `{entityName}.{ctrlName}`: PropertyGuid `{pg}` не найден локально (вероятно, унаследован от платформенного предка)");
+                                infos++;
+                            }
+                            else
+                            {
+                                sb.AppendLine($"- **ERROR** `{entityName}.{ctrlName}`: PropertyGuid `{pg}` не найден в Properties");
+                                errors++;
+                            }
                         }
                     }
 
@@ -217,7 +307,7 @@ public class ValidateGuidConsistencyTool
             }
         }
 
-        return (errors, warnings);
+        return (errors, warnings, infos);
     }
 
     private static async Task<(int errors, int warnings)> CheckResxGuids(
@@ -268,12 +358,12 @@ public class ValidateGuidConsistencyTool
         return (errors, warnings);
     }
 
-    private static (int errors, int warnings) CheckNavigationProperties(
+    private static (int errors, int warnings, int infos) CheckNavigationProperties(
         StringBuilder sb,
         List<(string Path, string Name, JsonDocument Doc)> entities,
         JsonDocument? moduleDoc)
     {
-        int errors = 0, warnings = 0;
+        int errors = 0, warnings = 0, infos = 0;
 
         // Collect all entity GUIDs in the module
         var localEntityGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -339,13 +429,13 @@ public class ValidateGuidConsistencyTool
                 if (localEntityGuids.Contains(entityGuid) || platformGuids.Contains(entityGuid))
                     continue;
 
-                // External reference — warn if no dependencies declared
-                sb.AppendLine($"- **WARN** `{entityName}.{propName}`: EntityGuid `{entityGuid}` — внешняя ссылка");
-                warnings++;
+                // External reference — INFO, not ERROR/WARN (likely from dependency module)
+                sb.AppendLine($"- **INFO** `{entityName}.{propName}`: EntityGuid `{entityGuid}` — внешняя ссылка (зависимый модуль)");
+                infos++;
             }
         }
 
-        return (errors, warnings);
+        return (errors, warnings, infos);
     }
 
     private static (int errors, int warnings) CheckRibbonActions(
@@ -414,6 +504,7 @@ public class ValidateGuidConsistencyTool
     {
         int errors = 0, warnings = 0;
 
+        var guidToDoc = BuildGuidToDocMap(entities);
         var guidToName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (_, name, doc) in entities)
         {
@@ -424,20 +515,39 @@ public class ValidateGuidConsistencyTool
 
         foreach (var (_, entityName, doc) in entities)
         {
-            var baseGuid = doc.RootElement.GetStringProp("BaseGuid");
-            if (string.IsNullOrEmpty(baseGuid))
-                continue;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var current = doc.RootElement;
 
-            // Check if base is in known platform types or local entities
-            if (DirectumConstants.KnownBaseGuids.ContainsKey(baseGuid))
-                continue;
+            while (true)
+            {
+                var baseGuid = current.GetStringProp("BaseGuid");
+                if (string.IsNullOrEmpty(baseGuid))
+                    break;
 
-            if (guidToName.ContainsKey(baseGuid))
-                continue;
+                // Prevent infinite loops
+                if (!visited.Add(baseGuid))
+                {
+                    sb.AppendLine($"- **ERROR** `{entityName}`: Циклическая ссылка BaseGuid `{baseGuid}`");
+                    errors++;
+                    break;
+                }
 
-            // Unknown base — might be from a dependency module
-            sb.AppendLine($"- **WARN** `{entityName}`: BaseGuid `{baseGuid}` не найден локально (возможно, из зависимого модуля)");
-            warnings++;
+                // Known platform base type — chain is valid
+                if (DirectumConstants.KnownBaseGuids.ContainsKey(baseGuid))
+                    break;
+
+                // Local entity — continue walking the chain
+                if (guidToDoc.TryGetValue(baseGuid, out var baseDoc))
+                {
+                    current = baseDoc.RootElement;
+                    continue;
+                }
+
+                // Unknown base — might be from a dependency module
+                sb.AppendLine($"- **WARN** `{entityName}`: BaseGuid `{baseGuid}` не найден локально (возможно, из зависимого модуля)");
+                warnings++;
+                break;
+            }
         }
 
         return (errors, warnings);

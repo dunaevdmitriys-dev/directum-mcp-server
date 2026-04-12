@@ -9,7 +9,7 @@ paths:
 - State: **Zustand** (8 stores) — НЕ Redux, НЕ Context для серверных данных
 - Routing: **HashRouter** — НЕ BrowserRouter (деплой в /Client/content/crm/)
 - UI: **Ant Design 5** (tokens, ConfigProvider, algorithm) — НЕ Tailwind, НЕ CSS modules
-- API: Axios в `src/api/client.ts` — Bearer token из localStorage + retry 3x (GET only) на 502/503/504
+- API: Axios в `src/api/client.ts` — JWT auto-attach + retry 3x (GET only) на 502/503/504
 - i18n: **i18next** (ru/en, ~400 ключей) — все UI-строки через `t()`
 - Темы: ThemeProvider (dark/light) через `antTheme.darkAlgorithm`
 - Charts: **recharts**
@@ -25,13 +25,6 @@ paths:
 ## Remote Components (для RX)
 PipelineKanban (Cover), LeadBoard (Cover), SalesDashboard (Cover), FunnelChart (Cover), Customer360 (Card)
 Loader: `(args: ILoaderArgs) => { createRoot(args.container).render(<C />); return cleanup; }`
-
-## Auth-модель
-- SSO: параметр `?user=LoginName` в URL → `GET /api/auth/sso?user=LoginName` → token сохраняется в localStorage
-- Token persistence: `localStorage.getItem('token')` — НЕ JWT в Zustand memory
-- F5 работает: `detectUser()` читает token из localStorage → `GET /auth/me` → восстанавливает сессию
-- LoginPage: fallback для прямого доступа без token, редирект на RX если токена нет
-- Deeplinks: «Открыть в RX» — клиентская генерация URL `/Client/#/card/{typeGuid}/{id}`
 
 ## Конфигурация
 - `config.ts`: API_BASE_URL=/api/crm, ODATA_URL=/Integration/odata, LOCALE=ru, VERSION=15.0.0

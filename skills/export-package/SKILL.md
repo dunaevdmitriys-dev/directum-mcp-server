@@ -48,7 +48,7 @@ EOF
 ### 2. Запусти экспорт
 
 ```bash
-LAUNCHER="${LAUNCHER_PATH:-$(pwd)/дистрибутив/launcher}"
+LAUNCHER="$WORKSPACE/дистрибутив/launcher"
 
 $LAUNCHER/do.sh dt export_package \
   --export_package="{output_path}" \

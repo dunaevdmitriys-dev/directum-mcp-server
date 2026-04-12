@@ -21,15 +21,36 @@ public class ValidateResxTool
         "Form_",
         "Ribbon_",
         "FilterPanel_",
-        // Module-level cover keys (CoverGroup, CoverAction, CoverTab, CoverTitle)
+        // Module-level cover keys
         "CoverGroup_",
         "CoverAction_",
         "CoverTab_",
         "CoverFunction_",
-        // Module-level keys
+        // Module-level keys: widgets
         "Widget_",
+        "WidgetTitle_",
+        "WidgetDescription_",
+        "WidgetAction_",
+        // Module-level keys: jobs and async handlers
         "Job_",
+        "JobDisplayName_",
+        "JobDescription_",
         "AsyncHandler_",
+        "AsyncHandlerDisplayName_",
+        "AsyncHandlerDescription_",
+        // Attachment groups, reports, parameters
+        "AttachmentGroup_",
+        "Report_",
+        "Parameter_",
+        // Block / route / assignment / task workflow keys
+        "Block_",
+        "Route_",
+        "Assignment_",
+        "Notice_",
+        "Task_",
+        "State_",
+        // Collection / child entity keys
+        "Collection_",
     ];
 
     // Keys that are valid without any prefix
@@ -49,6 +70,18 @@ public class ValidateResxTool
 
     private static readonly Regex ControlGroupGuidPattern = new(
         @"^ControlGroup_[0-9a-fA-F]{32}$",
+        RegexOptions.Compiled);
+
+    // Pattern to detect GUID-embedded keys (e.g., SomePrefix_a1b2c3d4-e5f6-...)
+    private static readonly Regex EmbeddedGuidPattern = new(
+        @"_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-",
+        RegexOptions.Compiled);
+
+    // Custom string resource keys: PascalCase identifiers used for validation messages,
+    // dialog text, error messages (e.g., "NameRequired", "MaxAmountMustBePositive").
+    // Valid Sungero convention — developers define custom string resources this way.
+    private static readonly Regex CustomStringResourcePattern = new(
+        @"^[A-Z][a-zA-Z0-9]+$",
         RegexOptions.Compiled);
 
     [McpServerTool(Name = "check_resx")]
@@ -99,18 +132,24 @@ public class ValidateResxTool
                     fileIssues.Add(new ResxIssue(
                         keyName, value,
                         "Resource_<GUID> — неверный формат, runtime не сможет разрешить подпись",
-                        suggestion));
+                        suggestion,
+                        ResxSeverity.Error));
                     continue;
                 }
 
                 // Check 2: Verify known prefixes
+                // Custom PascalCase keys and platform-inherited keys are valid — skip silently
                 if (!IsValidKey(keyName))
                 {
-                    // Could be a custom key — just a warning
-                    fileIssues.Add(new ResxIssue(
-                        keyName, value,
-                        "Неизвестный формат ключа — возможно, нестандартный",
-                        null));
+                    // Only report truly suspicious keys (not PascalCase custom resources)
+                    if (!CustomStringResourcePattern.IsMatch(keyName))
+                    {
+                        fileIssues.Add(new ResxIssue(
+                            keyName, value,
+                            "Нестандартный ключ (INFO — возможно, кастомный или платформенный)",
+                            null,
+                            ResxSeverity.Info));
+                    }
                 }
             }
 
@@ -138,8 +177,8 @@ public class ValidateResxTool
         if (ControlGroupGuidPattern.IsMatch(key))
             return true;
 
-        // Form_<GUID>, Ribbon_*, FilterPanel_* are valid
-        if (key.StartsWith("Form_") || key.StartsWith("Ribbon_") || key.StartsWith("FilterPanel_"))
+        // Keys containing embedded GUIDs are platform-generated
+        if (EmbeddedGuidPattern.IsMatch(key))
             return true;
 
         return false;
@@ -147,7 +186,6 @@ public class ValidateResxTool
 
     private static async Task<Dictionary<string, List<string>>> BuildMtdPropertyMap(string[] mtdFiles)
     {
-        // Map: entity file stem (without extension) -> list of property names
         var map = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var mtdFile in mtdFiles)
@@ -198,31 +236,23 @@ public class ValidateResxTool
         string value,
         Dictionary<string, List<string>> mtdPropertyMap)
     {
-        // Try to find the entity name from the resx file name
-        // E.g., "ContractSystem.resx" -> entity "Contract"
-        var fileName = Path.GetFileNameWithoutExtension(resxFile); // "ContractSystem" or "ContractSystem.ru"
+        var fileName = Path.GetFileNameWithoutExtension(resxFile);
         if (fileName.EndsWith(".ru", StringComparison.OrdinalIgnoreCase))
-            fileName = fileName[..^3]; // Remove ".ru"
+            fileName = fileName[..^3];
         if (fileName.EndsWith("System", StringComparison.OrdinalIgnoreCase))
-            fileName = fileName[..^6]; // Remove "System"
+            fileName = fileName[..^6];
 
         if (string.IsNullOrEmpty(fileName))
             return null;
 
-        // Look up properties from MTD
         if (mtdPropertyMap.TryGetValue(fileName, out var propNames))
         {
-            // Try to match by value — if the resx value matches a property name, suggest it
             var matchByValue = propNames.FirstOrDefault(p =>
                 string.Equals(p, value, StringComparison.OrdinalIgnoreCase));
             if (matchByValue != null)
                 return $"Property_{matchByValue}";
-
-            // If only one property is unmatched, suggest it
-            // (This is a heuristic — works well for small entities)
         }
 
-        // If the value looks like a property name (PascalCase word), suggest Property_<Value>
         if (!string.IsNullOrEmpty(value) && Regex.IsMatch(value, @"^[A-ZА-ЯЁ]"))
             return $"Property_{value} (предположение по значению)";
 
@@ -250,48 +280,44 @@ public class ValidateResxTool
             return sb.ToString();
         }
 
-        var criticalCount = issues.Sum(f => f.Issues.Count(i => i.Key.StartsWith("Resource_")));
-        var warningCount = issues.Sum(f => f.Issues.Count(i => !i.Key.StartsWith("Resource_")));
+        var criticalCount = issues.Sum(f => f.Issues.Count(i => i.Severity == ResxSeverity.Error));
+        var infoCount = issues.Sum(f => f.Issues.Count(i => i.Severity == ResxSeverity.Info));
 
         sb.AppendLine($"**Критических проблем (Resource_GUID)**: {criticalCount}");
-        if (warningCount > 0)
-            sb.AppendLine($"**Предупреждений**: {warningCount}");
+        if (infoCount > 0)
+            sb.AppendLine($"**Информационных (нестандартные ключи)**: {infoCount}");
         sb.AppendLine();
 
-        foreach (var fileIssue in issues)
+        var criticalFiles = issues.Where(f => f.Issues.Any(i => i.Severity == ResxSeverity.Error)).ToList();
+        var infoOnlyFiles = issues.Where(f => f.Issues.All(i => i.Severity == ResxSeverity.Info)).ToList();
+
+        foreach (var fileIssue in criticalFiles)
         {
             var relPath = fileIssue.FilePath;
             sb.AppendLine($"## `{Path.GetFileName(relPath)}`");
             sb.AppendLine($"Путь: `{relPath}`");
             sb.AppendLine();
 
-            var criticals = fileIssue.Issues.Where(i => i.Key.StartsWith("Resource_")).ToList();
-            var warnings = fileIssue.Issues.Where(i => !i.Key.StartsWith("Resource_")).ToList();
+            var criticals = fileIssue.Issues.Where(i => i.Severity == ResxSeverity.Error).ToList();
 
-            if (criticals.Count > 0)
+            sb.AppendLine("### Ошибки (Resource_GUID)");
+            sb.AppendLine();
+            sb.AppendLine("| Текущий ключ | Значение | Рекомендуемый ключ |");
+            sb.AppendLine("|-------------|----------|-------------------|");
+            foreach (var issue in criticals)
             {
-                sb.AppendLine("### Ошибки (Resource_GUID)");
-                sb.AppendLine();
-                sb.AppendLine("| Текущий ключ | Значение | Рекомендуемый ключ |");
-                sb.AppendLine("|-------------|----------|-------------------|");
-                foreach (var issue in criticals)
-                {
-                    var suggestion = issue.Suggestion ?? "_(определите вручную по MTD)_";
-                    sb.AppendLine($"| `{issue.Key}` | {issue.Value} | `{suggestion}` |");
-                }
-                sb.AppendLine();
+                var suggestion = issue.Suggestion ?? "_(определите вручную по MTD)_";
+                sb.AppendLine($"| `{issue.Key}` | {issue.Value} | `{suggestion}` |");
             }
+            sb.AppendLine();
+        }
 
-            if (warnings.Count > 0)
-            {
-                sb.AppendLine("### Предупреждения");
-                sb.AppendLine();
-                foreach (var issue in warnings)
-                {
-                    sb.AppendLine($"- `{issue.Key}` = \"{issue.Value}\" — {issue.Problem}");
-                }
-                sb.AppendLine();
-            }
+        if (infoOnlyFiles.Count > 0)
+        {
+            sb.AppendLine($"### Информационные ({infoCount} нестандартных ключей в {infoOnlyFiles.Count} файлах)");
+            sb.AppendLine();
+            sb.AppendLine("Эти ключи не соответствуют стандартным префиксам, но могут быть кастомными или платформенными. Проверьте вручную при необходимости.");
+            sb.AppendLine();
         }
 
         if (criticalCount > 0)
@@ -309,12 +335,17 @@ public class ValidateResxTool
             sb.AppendLine("- Действия: `Action_<ActionName>`");
             sb.AppendLine("- Перечисления: `Enum_<EnumName>_<Value>`");
             sb.AppendLine("- Группы контролов: `ControlGroup_<GUID>`");
+            sb.AppendLine("- Виджеты: `Widget_*`, `WidgetTitle_*`, `WidgetDescription_*`, `WidgetAction_*`");
+            sb.AppendLine("- Задания/Обработчики: `Job_*`, `JobDisplayName_*`, `AsyncHandler_*`, `AsyncHandlerDisplayName_*`");
+            sb.AppendLine("- Вложения: `AttachmentGroup_*`");
+            sb.AppendLine("- Отчёты: `Report_*`, `Parameter_*`");
             sb.AppendLine("- `DisplayName`, `CollectionDisplayName` — без префикса");
         }
 
         return sb.ToString();
     }
 
-    private record ResxIssue(string Key, string Value, string Problem, string? Suggestion);
+    private enum ResxSeverity { Error, Info }
+    private record ResxIssue(string Key, string Value, string Problem, string? Suggestion, ResxSeverity Severity);
     private record FileIssues(string FilePath, List<ResxIssue> Issues);
 }
